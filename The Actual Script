@@ -1,1091 +1,2005 @@
-local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui")
+--// Lock-on Camera Main v3.2 (Bug Fix Edition)
+--// Animated themes, NPC support, full save/load
+--// Fixed: re-execute, cleanup, animation errors, teleport persistence
 
-local ScreenGui = Instance.new("ScreenGui")
-local main = Instance.new("Frame")
-local topbar = Instance.new("Frame")
-local minimize = Instance.new("TextButton")
-local titleLabel = Instance.new("TextLabel")
-local remotes = Instance.new("ScrollingFrame")
-local UIListLayout = Instance.new("UIListLayout")
-local eTemplate = Instance.new("TextButton")
-local icon = Instance.new("ImageLabel")
-local name = Instance.new("TextLabel")
-local fTemplate = Instance.new("TextButton")
-local icon_2 = Instance.new("ImageLabel")
-local name_2 = Instance.new("TextLabel")
-local properties = Instance.new("Frame")
-local codeframe = Instance.new("ScrollingFrame")
-codebox = Instance.new("TextBox")
-local propertyframe = Instance.new("ScrollingFrame")
-local UIListLayout_2 = Instance.new("UIListLayout")
-local property = Instance.new("Frame")
-local name_3 = Instance.new("TextLabel")
-local property_2 = Instance.new("TextButton")
-local methodToggle = Instance.new("TextButton")
+--==================================================
+-- CONFIGURATION
+--==================================================
 
---Properties:
+-- Set this to your script URL for teleport persistence
+-- Leave as nil to disable auto re-execute on teleport
+local SCRIPT_URL = "https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/The%20Actual%20Script"
 
-ScreenGui.ResetOnSpawn = false
-ScreenGui.DisplayOrder = 999999999
-ScreenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+-- Debug mode - set to true to see teleport persistence debug messages
+local TELEPORT_DEBUG = true
 
-main.Name = "main"
-main.Parent = ScreenGui
-main.BackgroundColor3 = Color3.new(0.219608, 0.219608, 0.219608)
-main.BorderSizePixel = 0
-main.Position = UDim2.new(0, 100, 0, 100)
-main.Size = UDim2.new(0.5, 0, 0.5, 0)
+--==================================================
+-- TELEPORT PERSISTENCE SETUP
+--==================================================
 
-topbar.Name = "topbar"
-topbar.Parent = main
-topbar.BorderSizePixel = 0
-topbar.BackgroundColor3 = Color3.new(0.121569, 0.121569, 0.121569)
-topbar.Size = UDim2.new(1, 0, 0, 18)
+-- Get queue_on_teleport function from various executors
+local queueteleport = queue_on_teleport 
+    or (syn and syn.queue_on_teleport) 
+    or (fluxus and fluxus.queue_on_teleport)
+    or (krnl and krnl.queue_on_teleport)
+    or (getgenv and getgenv().queue_on_teleport)
+    or (Krnl and Krnl.queue_on_teleport)
+    or (KRNL_LOADED and queue_on_teleport)
+    or (Synapse and Synapse.queue_on_teleport)
+    or (Fluxus and Fluxus.queue_on_teleport)
+    or (is_sirhurt_closure and queue_on_teleport)
+    or (pebc_execute and queue_on_teleport)
 
-minimize.Name = "minimize"
-minimize.Parent = topbar
-minimize.BackgroundColor3 = Color3.new(0, 0.105882, 0.792157)
-minimize.BorderSizePixel = 0
-minimize.Position = UDim2.new(0, 0, 0, 0)
-minimize.Size = UDim2.new(0, 18, 0, 18)
-minimize.Font = Enum.Font.SourceSans
-minimize.Text = ""
-minimize.TextColor3 = Color3.new(0, 0, 0)
-minimize.TextSize = 14
-
-titleLabel.Parent = topbar
-titleLabel.BackgroundColor3 = Color3.new(1, 1, 1)
-titleLabel.BackgroundTransparency = 1
-titleLabel.BorderSizePixel = 0
-titleLabel.Position = UDim2.new(0.25, 0, 0, 0)
-titleLabel.Size = UDim2.new(0.5, 0, 1, 0)
-titleLabel.Font = Enum.Font.SourceSansBold
-titleLabel.Text = "SimpleSpy v0.8 |  exxtremewa#9394"
-titleLabel.TextColor3 = Color3.new(0.905882, 0.905882, 0.905882)
-titleLabel.TextSize = 14
-
-remotes.Name = "remotes"
-remotes.Parent = main
-remotes.BackgroundColor3 = Color3.new(1, 1, 1)
-remotes.BackgroundTransparency = 1
-remotes.BorderSizePixel = 0
-remotes.Position = UDim2.new(0, 0, 0, 18)
-remotes.Size = UDim2.new(0.5, 0, 1, -18)
-remotes.BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
-remotes.ScrollBarThickness = 10
-remotes.TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
-
-UIListLayout.Parent = remotes
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-
-eTemplate.Name = "eTemplate"
-eTemplate.Text = ""
-eTemplate.Parent = remotes
-eTemplate.BackgroundColor3 = Color3.new(0.219608, 0.219608, 0.219608)
-eTemplate.BorderColor3 = Color3.new(0.8, 0.8, 0.8)
-eTemplate.BorderSizePixel = 1
-eTemplate.Size = UDim2.new(1, -10, 0, 20)
-eTemplate.BorderMode = Enum.BorderMode.Inset
-
-icon.Name = "icon"
-icon.Parent = eTemplate
-icon.BackgroundColor3 = Color3.new(1, 1, 1)
-icon.BackgroundTransparency = 1
-icon.BorderSizePixel = 0
-icon.Size = UDim2.new(0, 18, 0, 18)
-icon.Position = UDim2.new(0, 2, 0, 2)
-icon.Image = "http://www.roblox.com/asset/?id=4640035463"
-icon.ScaleType = Enum.ScaleType.Fit
-
-name.Name = "name"
-name.Parent = eTemplate
-name.BackgroundColor3 = Color3.new(1, 1, 1)
-name.BackgroundTransparency = 1
-name.Position = UDim2.new(0, 25, 0, 0)
-name.Size = UDim2.new(1, -25, 1, 0)
-name.Font = Enum.Font.SourceSansBold
-name.Text = "RemoteEventName"
-name.TextColor3 = Color3.new(0.976471, 0.921569, 0.121569)
-name.TextSize = 14
-name.TextXAlignment = Enum.TextXAlignment.Left
-
-fTemplate.Name = "fTemplate"
-fTemplate.Text = ""
-fTemplate.Parent = remotes
-fTemplate.BackgroundColor3 = Color3.new(0.219608, 0.219608, 0.219608)
-fTemplate.BorderColor3 = Color3.new(0.8, 0.8, 0.8)
-fTemplate.BorderSizePixel = 1
-fTemplate.Size = UDim2.new(1, -10, 0, 20)
-fTemplate.BorderMode = Enum.BorderMode.Inset
-
-icon_2.Name = "icon"
-icon_2.Parent = fTemplate
-icon_2.BackgroundColor3 = Color3.new(1, 1, 1)
-icon_2.BackgroundTransparency = 1
-icon_2.BorderSizePixel = 0
-icon_2.Size = UDim2.new(0, 18, 0, 18)
-icon_2.Position = UDim2.new(0, 2, 0, 2)
-icon_2.Image = "http://www.roblox.com/asset/?id=4640035282"
-icon_2.ScaleType = Enum.ScaleType.Fit
-
-name_2.Name = "name"
-name_2.Parent = fTemplate
-name_2.BackgroundColor3 = Color3.new(1, 1, 1)
-name_2.BackgroundTransparency = 1
-name_2.Position = UDim2.new(0, 25, 0, 0)
-name_2.Size = UDim2.new(1, -25, 1, 0)
-name_2.Font = Enum.Font.SourceSansBold
-name_2.Text = "RemoteFunctionName"
-name_2.TextColor3 = Color3.new(0.666667, 0.12549, 1)
-name_2.TextSize = 14
-name_2.TextXAlignment = Enum.TextXAlignment.Left
-
-properties.Name = "properties"
-properties.Parent = main
-properties.BackgroundColor3 = Color3.new(1, 1, 1)
-properties.BackgroundTransparency = 1
-properties.Position = UDim2.new(0.5, 0, 0, 18)
-properties.Size = UDim2.new(0.5, 0, 1, -18)
-
-codeframe.Name = "codeframe"
-codeframe.Parent = properties
-codeframe.BackgroundColor3 = Color3.new(1, 1, 1)
-codeframe.BackgroundTransparency = 1
-codeframe.Size = UDim2.new(1, 0, 0.5, 0)
-codeframe.BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
-codeframe.ScrollBarThickness = 10
-codeframe.TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
-
-codebox.Name = "codebox"
-codebox.Parent = codeframe
-codebox.BackgroundColor3 = Color3.new(0.0784314, 0.0784314, 0.0784314)
-codebox.BorderSizePixel = 0
-codebox.Selectable = true
-codebox.Size = UDim2.new(1, -10, 1, 0)
-codebox.Font = Enum.Font.SourceSansSemibold
-codebox.Text = "{\\n    [1] = true\\n}"
-codebox.TextColor3 = Color3.new(0.827451, 0.827451, 0.827451)
-codebox.TextSize = 14
-codebox.TextXAlignment = Enum.TextXAlignment.Left
-codebox.TextYAlignment = Enum.TextYAlignment.Top
-codebox.ClearTextOnFocus = false
-
-propertyframe.Name = "propertyframe"
-propertyframe.Parent = properties
-propertyframe.BackgroundColor3 = Color3.new(0.141176, 0.141176, 0.141176)
-propertyframe.BorderSizePixel = 0
-propertyframe.Position = UDim2.new(0, 0, 0.5, 0)
-propertyframe.Size = UDim2.new(1, 0, 0.5, 0)
-propertyframe.BottomImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
-propertyframe.ScrollBarThickness = 10
-propertyframe.TopImage = "rbxasset://textures/ui/Scroll/scroll-middle.png"
-
-UIListLayout_2.Parent = propertyframe
-UIListLayout_2.SortOrder = Enum.SortOrder.LayoutOrder
-
-property.Name = "property"
-property.Parent = propertyframe
-property.BackgroundColor3 = Color3.new(0.164706, 0.164706, 0.164706)
-property.BorderColor3 = Color3.new(0.415686, 0.415686, 0.415686)
-property.BorderSizePixel = 0
-property.Size = UDim2.new(1, -10, 0, 15)
-
-name_3.Name = "name"
-name_3.Parent = property
-name_3.BackgroundColor3 = Color3.new(0.164706, 0.164706, 0.164706)
-name_3.BorderColor3 = Color3.new(0.478431, 0.478431, 0.478431)
-name_3.Size = UDim2.new(0.400000006, 0, 1, 0)
-name_3.Font = Enum.Font.SourceSans
-name_3.Text = "Name"
-name_3.TextColor3 = Color3.new(0.909804, 0.909804, 0.909804)
-name_3.TextSize = 14
-name_3.TextXAlignment = Enum.TextXAlignment.Left
-
-property_2.Name = "property"
-property_2.Parent = property
-property_2.BackgroundColor3 = Color3.new(0.0941177, 0.0941177, 0.0941177)
-property_2.BorderColor3 = Color3.new(0.478431, 0.478431, 0.478431)
-property_2.Position = UDim2.new(0.300000012, 0, 0, 0)
-property_2.Size = UDim2.new(0.699999988, 0, 1, 0)
-property_2.Font = Enum.Font.SourceSans
-property_2.Text = "Function"
-property_2.TextColor3 = Color3.new(0.909804, 0.909804, 0.909804)
-property_2.TextSize = 14
-property_2.TextXAlignment = Enum.TextXAlignment.Left
-
-methodToggle.Name = "MethodToggle"
-methodToggle.Parent = topbar
-methodToggle.BackgroundColor3 = Color3.new(0.7450980392156863, 0.7450980392156863, 0.7450980392156863)
-methodToggle.BorderSizePixel = 0
-methodToggle.Position = UDim2.new(1, -80, 0, 0)
-methodToggle.Size = UDim2.new(0, 80, 1, 0)
-methodToggle.TextScaled = true
-methodToggle.Font = Enum.Font.SourceSans
-
--------------------------------------------------------------------------------
--- init
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local ContentProvider = game:GetService("ContentProvider")
-
---- UDim2 size of `main` while minimized
-local minSize = UDim2.new(0, 100, 0, 15)
---- UDim2 size of `main` while expanded
-local mainSize = main.Size
-local selectedColor = Color3.new(0.321569, 0.333333, 1)
-local deselectedColor = Color3.new(0.8, 0.8, 0.8)
---- So things are descending
-local layoutOrderNum = 999999999
---- Whether or not the gui is closed (defaults to false)
-closed = false
---- The event logs to be read from
-logs = {}
---- The event currently selected.Log (defaults to nil)
-selected = nil
---- The blacklist (can be a string name or the Remote Instance)
-blacklist = {}
---- The block list (can be a string name or the Remote Instance)
-blocklist = {}
---- Whether or not to add getNil function
-local getNil = false
---- Array of remotes (and original functions) connected to
-local connectedRemotes = {}
---- True = hookfunction, false = namecall
-local toggle = false
-local gm = getrawmetatable(game)
-local original = gm.__namecall
-setreadonly(gm, false)
---- This event is the main handler for remotes
-local remoteHandlerEvent = Instance.new("BindableEvent")
-
--- functions
-
---- Toggles the remote spy method (when button clicked)
-function onToggleButtonClick()
-    if toggle then
-        methodToggle.Text = "Disabled"
-    else
-        methodToggle.Text = "Enabled"
-    end
-    toggleSpyMethod()
-end
-
---- Drags gui (so long as mouse is held down)
-function onBarInput(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        local lastPos = UserInputService:GetMouseLocation()
-        RunService:BindToRenderStep(
-            "drag",
-            1,
-            function()
-                local newPos = UserInputService:GetMouseLocation()
-                if newPos ~= lastPos then
-                    main.Position =
-                        UDim2.new(
-                        0,
-                        main.Position.X.Offset + (newPos - lastPos).X,
-                        0,
-                        main.Position.Y.Offset + (newPos - lastPos).Y
-                    )
-                    lastPos = newPos
-                end
-            end
-        )
-        topbar.InputEnded:Connect(
-            function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    RunService:UnbindFromRenderStep("drag")
-                end
-            end
-        )
+-- Debug function
+local function tpDebug(msg)
+    if TELEPORT_DEBUG then
+        print("[LockOn-TP] " .. msg)
     end
 end
 
---- Expands and minimizes the gui (closed is the toggle boolean)
-function toggleMinimize()
-    if not closed then
-        closed = not closed
-        remotes.Visible = false
-        properties.Visible = false
-        titleLabel.Visible = false
-        methodToggle.Visible = false
-        TweenService:Create(main, TweenInfo.new(0.5), {Size = minSize}):Play()
-    else
-        closed = not closed
-        TweenService:Create(main, TweenInfo.new(0.5), {Size = mainSize}):Play()
-        wait(0.5)
-        methodToggle.Visible = true
-        remotes.Visible = true
-        properties.Visible = true
-        titleLabel.Visible = true
-    end
-end
-
---- Checks if the given Remote is blacklisted; returns true if blacklisted, false if not
-function blacklisted(remote)
-    if #blacklist > 0 then
-        for _, v in pairs(blacklist) do
-            if type(v) == "string" and v == remote.Name then
-                return true
-            elseif typeof(v) == "Instance" and v == remote then
-                return true
-            end
-        end
-    end
-    return false
-end
-
---- Checks if the given Remote is blocked; returns true if blacklisted, false if not
-function blocked(remote)
-    if #blocklist > 0 then
-        for _, v in pairs(blocklist) do
-            if type(v) == "string" and v == remote.Name then
-                return true
-            elseif typeof(v) == "Instance" and v == remote then
-                return true
-            end
-        end
-    end
-    return false
-end
-
---- Runs on MouseButton1Click of an event frame
-function eventSelect(frame)
-    if --[[input.UserInputType == Enum.UserInputType.MouseButton1 and]] (not selected or selected.Log ~= frame) then
-        if selected then
-            TweenService:Create(selected.Log, TweenInfo.new(0.5), {BorderColor3 = deselectedColor, BorderSizePixel = 1}):Play(
-
-            )
-            selected = nil
-        end
-        for _, v in pairs(logs) do
-            if frame == v.Log then
-                selected = v
-            end
-        end
-        if selected then
-            TweenService:Create(selected.Log, TweenInfo.new(0.5), {BorderColor3 = selectedColor, BorderSizePixel = 2}):Play(
-
-            )
-            codebox.Text = selected.GenScript
-        end
-    end
-end
-
---- Creates new function button (below codebox)
-function newButton(name, defaultName, onClick)
-    local button = property:Clone()
-    button.name.Text = name
-    button.property.Text = defaultName
-    button.property.MouseButton1Click:Connect(
-        function(...)
-            if selected then
-                onClick(button.property, ...)
-            end
-        end
-    )
-    button.Parent = propertyframe
-end
-
---- Adds new RemoteEvent to logs
-function newEvent(name, gen_script, remote, source_script, blocked, upvalues, constants, num)
-    local remoteFrame = eTemplate:Clone()
-    remoteFrame.name.Text = name
-    local id = Instance.new("IntValue")
-    id.Name = "ID"
-    id.Value = #logs + 1
-    id.Parent = remoteFrame
-    logs[#logs + 1] = {
-        Name = name,
-        GenScript = gen_script,
-        Source = source_script,
-        Remote = remote,
-        Log = remoteFrame,
-        Upvalues = upvalues,
-        Constants = constants,
-        Blocked = blocked,
-        FunNum = num
-    }
-    if blocked then
-        logs[#logs].GenScript = "-- THIS REMOTE WAS PREVENTED FROM FIRING THE SERVER BY SIMPLESPY\n\n" .. logs[#logs].GenScript
-    end
-    remoteFrame.MouseButton1Click:Connect(
-        function(...)
-            eventSelect(remoteFrame, ...)
-        end
-    )
-    if layoutOrderNum < 1 then
-        layoutOrderNum = 999999999
-    end
-    remoteFrame.LayoutOrder = layoutOrderNum
-    layoutOrderNum = layoutOrderNum - 1
-    remoteFrame.Parent = remotes
-end
-
---- Adds new RemoteFunction to logs
-function newFunction(name, gen_script, remote, source_script, blocked, upvalues, constants, num)
-    local remoteFrame = fTemplate:Clone()
-    remoteFrame.name.Text = name
-    local id = Instance.new("IntValue")
-    id.Name = "ID"
-    id.Value = #logs + 1
-    id.Parent = remoteFrame
-    logs[#logs + 1] = {
-        Name = name,
-        GenScript = gen_script,
-        Source = source_script,
-        Remote = remote,
-        Log = remoteFrame,
-        Upvalues = upvalues,
-        Constants = constants,
-        Blocked = blocked,
-        FunNum = num
-    }
-    if blocked then
-        logs[#logs].GenScript = "-- THIS REMOTE WAS PREVENTED FROM FIRING THE SERVER BY SIMPLESPY\n\n" .. logs[#logs].GenScript
-    end
-    remoteFrame.MouseButton1Click:Connect(
-        function(...)
-            eventSelect(remoteFrame, ...)
-        end
-    )
-    if layoutOrderNum < 1 then
-        layoutOrderNum = 999999999
-    end
-    remoteFrame.LayoutOrder = layoutOrderNum
-    layoutOrderNum = layoutOrderNum - 1
-    remoteFrame.Parent = remotes
-end
-
---- Generates a script from the provided arguments (first has to be remote path)
-function genScript(remote, ...)
-    local gen = ""
-    local args = {...}
-    if #args > 0 then
-        if
-            not pcall(
-                function()
-                    gen = gen .. "local args = " .. tableToString(args) .. "\n\n"
-                end
-            )
-         then
-            gen =
-                gen .. "-- TableToString failure! Reverting to legacy functionality (results may vary)\nlocal args = {"
-            if
-                not pcall(
-                    function()
-                        for i, v in pairs(args) do
-                            if type(i) ~= "Instance" and type(i) ~= "userdata" then
-                                gen = gen .. "\n    [" .. tostring(i) .. "] = "
-                            elseif type(i) == "string" then
-                                gen = gen .. '\n    ["' .. tostring(i) .. '"] = '
-                            elseif type(i) == "userdata" and typeof(i) ~= "Instance" then
-                                gen = gen .. "\n    [" .. typeof(i) .. ".new(" .. tostring(i) .. ")] = "
-                            elseif type(i) == "userdata" then
-                                gen = gen .. "\n    [game." .. i:GetFullName() .. ")] = "
-                            end
-                            if type(v) ~= "Instance" and type(v) ~= "userdata" then
-                                gen = gen .. tostring(v)
-                            elseif type(v) == "string" then
-                                gen = gen .. '"' .. tostring(v) .. '"'
-                            elseif type(v) == "userdata" and typeof(v) ~= "Instance" then
-                                gen = gen .. typeof(v) .. ".new(" .. tostring(v) .. ")"
-                            elseif type(v) == "userdata" then
-                                gen = gen .. "game." .. v:GetFullName()
-                            end
-                        end
-                        gen = gen .. "\n}\n\n"
-                    end
-                )
-             then
-                gen = gen .. "}\n-- Legacy tableToString failure! Unable to decompile."
-            end
-        end
-        if remote:IsA("RemoteEvent") then
-            gen = gen .. typeToString(remote) .. ":FireServer(unpack(args))"
-        elseif remote:IsA("RemoteFunction") then
-            gen = gen .. typeToString(remote) .. ":InvokeServer(unpack(args))"
-        end
-    else
-        if remote:IsA("RemoteEvent") then
-            gen = gen .. typeToString(remote) .. ":FireServer()"
-        elseif remote:IsA("RemoteFunction") then
-            gen = gen .. typeToString(remote) .. ":InvokeServer()"
-        end
-    end
-    if getNil then
-        gen =
-            "function getNil(name,class) for _,v in pairs(getnilinstances())do if v.ClassName==class and v.Name==name then return v;end end end\n\n" ..
-            gen
-        getNil = false
-    end
-    gen =
-        "-- Script generated by SimpleSpy - credits to exxtremewa#9394\n-- This generator is IN DEVELOPMENT, not compatible with all types/classes yet\n\n" ..
-        gen
-    return gen
-end
-
---- Generates spaces based on the provided level
-function space(level)
-    local out = ""
-    for i = 1, level do
-        out = out .. " "
-    end
-    return out
-end
-
---- Adds \'s to the text as a replacement to whitespace chars and other things
-function getSpecials(s, nested)
-    if not nested then
-        s = s:gsub("\\", "\\\\")
-    end
-    if s:match("\n") then
-        local pos, pos2 = s:find("\n")
-        s = s:sub(0, pos - 1) .. "\\n" .. s:sub(pos2 + 1, s:len())
-        return getSpecials(s, true)
-    elseif s:match("\t") then
-        local pos, pos2 = s:find("\t")
-        s = s:sub(0, pos - 1) .. "\\t" .. s:sub(pos2 + 1, s:len())
-        return getSpecials(s, true)
-    elseif s:match("\t") then
-        local pos, pos2 = s:find("\t")
-        s = s:sub(0, pos - 1) .. "\\t" .. s:sub(pos2 + 1, s:len())
-        return getSpecials(s, true)
-    elseif s:match("\"") and (s:sub(s:find("\"") - 1, s:find("\"") - 1) ~= "\\") then
-        local pos, pos2 = s:find("\"")
-        s = s:sub(0, pos - 1) .. "\\\"" .. s:sub(pos2 + 1, s:len())
-        return getSpecials(s, true)
-    elseif s:match("'") and (s:sub(s:find("'") - 1, s:find("'") - 1) ~= "\\") then
-        local pos, pos2 = s:find("'")
-        s = s:sub(0, pos - 1) .. "\\'" .. s:sub(pos2 + 1, s:len())
-        return getSpecials(s, true)
-    else
-        return s
-    end
-end
-
---- Converts a var to a string (including userdata)
-function typeToString(var, level)
-    if not level then
-        level = 4
-    end
-    local out = ""
-    if type(var) ~= "userdata" and type(var) ~= "table" and type(var) ~= "string" then
-        -- Number, booleans
-        out = out .. tostring(var)
-    elseif type(var) == "string" then
-        -- Strings
-        out = out .. '"' .. getSpecials(var) .. '"'
-    elseif type(var) == "table" then
-        -- Tables
-        out = out .. tableToString(var, level)
-    elseif typeof(var) == "TweenInfo" then
-        -- TweenInfo
-        out =
-            out ..
-            "TweenInfo.new(" ..
-                tostring(var.Time) ..
-                    ", Enum.EasingStyle." ..
-                        tostring(var.EasingStyle) ..
-                            ", Enum.EasingDirection." ..
-                                tostring(var.EasingDirection) ..
-                                    ", " ..
-                                        tostring(var.RepeatCount) ..
-                                            ", " .. tostring(var.Reverses) .. ", " .. tostring(var.DelayTime) .. ")"
-    elseif typeof(var) == "Ray" then
-        -- Ray
-        out =
-            out ..
-            "Ray.new(Vector3.new(" .. tostring(var.Origin) .. "), Vector3.new(" .. tostring(var.Direction) .. "))"
-    elseif typeof(var) == "NumberSequence" then
-        -- NumberSequence
-        out = out .. "NumberSequence.new("
-        for i, v in pairs(var.KeyPoints) do
-            out = out .. tostring(v)
-            if i < #var.Keypoints then
-                out = out .. ", "
-            end
-        end
-        out = out .. ")"
-    elseif typeof(var) == "DockWidgetPluginGuiInfo" then
-        -- DockWidgetPluginGuiInfo
-        out = out .. "DockWidgetPluginGuiInfo.new(Enum.InitialDockState" .. tostring(var) .. ")"
-    elseif typeof(var) == "ColorSequence" then
-        -- ColorSequence
-        out = out .. "ColorSequence.new("
-        for i, v in pairs(var.KeyPoints) do
-            out = out .. "Color3.new(" .. tostring(v) .. ")"
-            if i < #var.Keypoints then
-                out = out .. ", "
-            end
-        end
-        out = out .. ")"
-    elseif typeof(var) == "BrickColor" then
-        -- BrickColor
-        out = out .. "BrickColor.new(" .. tostring(var.Number) .. ")"
-    elseif typeof(var) == "NumberRange" then
-        -- NumberRange
-        out = out .. "NumberRange.new(" .. tostring(var.Min) .. ", " .. tostring(var.Max) .. ")"
-    elseif typeof(var) == "Region3" then
-        -- Region3
-        local center = var.CFrame.Position
-        local size = var.CFrame.Size
-        local vector1 = center - size / 2
-        local vector2 = center + size / 2
-        out = out .. "Region3.new(Vector3.new(" .. tostring(vector1) .. "), Vector3.new(" .. tostring(vector2) .. ")"
-    elseif type(var) == "userdata" and typeof(var) ~= "Instance" then
-        -- Default userdata (no instances)
-        local dataName = typeof(var)
-        local args = tostring(var)
-        for i = 1, args:len() do
-            if args:sub(i, i) == "}" or args:sub(i, i) == "{" then
-                if i > 1 and i < args:len() then
-                    args = args:sub(1, i - 1) .. " " .. args:sub(i + 1, args:len())
-                elseif i == 1 then
-                    args = " " .. args:sub(i + 1, args:len())
-                elseif i == args:len() then
-                    args = args:sub(1, i - 1) .. " "
-                end
-            end
-        end
-        out = out .. dataName .. ".new(" .. args .. ")"
-    elseif type(var) == "userdata" and typeof(var) == "Instance" then
-        -- Instances
-        local parent = var
-        if parent == nil then
-            out = "nil"
-        elseif parent ~= game then
-            while true do
-                if parent and parent.Parent == game then
-                    if game:GetService(parent.ClassName) then
-                        if parent.ClassName == "Workspace" then
-                            out = "workspace" .. out
-                        else
-                            out = 'game:GetService("' .. parent.ClassName .. '")' .. out
-                        end
-                        break
-                    else
-                        out = 'game["' .. getSpecials(parent.Name) .. '"]'
-                        break
-                    end
-                elseif parent.Parent == nil then
-                    getNil = true
-                    out = 'getNil("' .. getSpecials(parent.Name) .. '", "' .. parent.ClassName .. '")'
-                    break
-                else
-                    if parent.Name:match("%a+") ~= parent.Name then
-                        out = '["' .. getSpecials(parent.Name) .. '"]' .. out
-                    else
-                        out = "." .. parent.Name .. out
-                    end
-                end
-                parent = parent.Parent
-            end
-        else
-            out = "game"
-        end
-    -- legacy method
-    -- out = out .. "game." .. var:GetFullName() .. ","
-    end
-    return out
-end
-
---- Converts a table to a string (includes nested tables)
-function tableToString(t, level)
-    if type(level) ~= "number" then
-        level = 4
-    else
-        level = level + 4
-    end
-    local out = ""
-    for i, v in pairs(t) do
-        out = out .. "\n" .. space(level) .. "[" .. typeToString(i, level) .. "] = " .. typeToString(v, level) .. ","
-    end
-    out = "{" .. out .. "\n" .. space(level - 4) .. "}"
-    return out
-end
-
---- Toggles on and off the Hookfunction remote spy method (DISABLED- will not run)
-function toggleHook()
-    if toggle then
-        -- local function connect(remote)
-        --     spawn(
-        --         function()
-        --             if remote:IsA("RemoteEvent") then
-        --                 local old
-        --                 old =
-        --                     hookfunction(
-        --                     remote.FireServer,
-        --                     function(...)
-        --                         newEvent(remote.Name, genScript(remote, ...), remote, rawget(getfenv(2), "script"))
-        --                         return old(...)
-        --                     end
-        --                 )
-        --                 table.insert(connectedRemotes, {remote, old})
-        --             elseif remote:IsA("RemoteFunction") then
-        --                 local old
-        --                 old =
-        --                     hookfunction(
-        --                     remote.InvokeServer,
-        --                     function(...)
-        --                         newEvent(remote.Name, genScript(remote, ...), remote, rawget(getfenv(2), "script"))
-        --                         return old(...)
-        --                     end
-        --                 )
-        --                 table.insert(connectedRemotes, {remote, old})
-        --             end
-        --         end
-        --     )
-        -- end
-        -- game.ChildAdded:Connect(
-        --     function(c)
-        --         pcall(
-        --             function()
-        --                 if c:IsA("RemoteEvent") and c:IsA("RemoteFunction") then
-        --                     connect(c)
-        --                 end
-        --             end
-        --         )
-        --     end
-        -- )
-        -- spawn(
-        --     function()
-        --         for _, v in pairs(game:GetDescendants()) do
-        --             if toggle then
-        --                 pcall(
-        --                     function()
-        --                         if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
-        --                             connect(v)
-        --                         end
-        --                     end
-        --                 )
-        --                 wait()
-        --             end
-        --         end
-        --     end
-        -- )
-    else
-        -- for _, v in pairs(connectedRemotes) do
-        --     if v[1] and v[2] then
-        --         if v[1]:IsA("RemoteEvent") then
-        --             hookfunction(v[1].FireServer, v[2])
-        --         elseif v[1]:IsA("RemoteFunction") then
-        --             hookfunction(v[1].InvokeServer, v[2])
-        --         end
-        --     end
-        -- end
-        -- connectedRemotes = {}
-    end
-end
-
---- Toggles on and off the namecall remote spy method
-function toggleNamecall()
-    if not toggle then
-        gm.__namecall = function(...)
-            local args = {...}
-            local remote = args[1]
-            local methodName = getnamecallmethod()
-            if methodName == "FireServer" and not blacklisted(remote) then
-                table.remove(args, 1)
-                local script = rawget(getfenv(2), "script")
-                local func = debug.getinfo(2).func
-                spawn(
-                    function()
-                        local funNum
-                        for i, v in pairs(getgc()) do
-                            if v == func then
-                                funNum = i
-                                break
-                            end
-                        end
-                        remoteHandlerEvent:Fire("RemoteEvent", remote.Name, genScript(remote, unpack(args)), remote, script, blocked(remote), tableToString(debug.getupvalues(func)), tableToString(debug.getconstants(func)), funNum)
-                    end
-                )
-            elseif methodName == "InvokeServer" and not blacklisted(remote) then
-                table.remove(args, 1)
-                local script = rawget(getfenv(2), "script")
-                local func = debug.getinfo(2).func
-                spawn(
-                    function()
-                        local funNum
-                        for i, v in pairs(getgc()) do
-                            if v == func then
-                                funNum = i
-                                break
-                            end
-                        end
-                        remoteHandlerEvent:Fire("RemoteFunction", remote.Name, genScript(remote, unpack(args)), remote, script, blocked(remote), tableToString(debug.getupvalues(func)), tableToString(debug.getconstants(func)), funNum)
-                    end
-                )
-            end
-            if (methodName == "InvokeServer" or methodName == "FireServer") and blocked(remote) then
-                return nil
-            else
-                return original(...)
-            end
-        end
-    else
-        gm.__namecall = original
-    end
-end
-
---- Toggles between the two remotespy methods (hookfunction currently = disabled)
-function toggleSpyMethod()
-    toggleHook()
-    toggleNamecall()
-    toggle = not toggle
-end
-
---- Handles the button creation things... Connected to `remoteHandlerEvent`
-function bindableHandler(type, ...)
-    if type == "RemoteEvent" then
-        newEvent(...)
-    elseif type == "RemoteFunction" then
-        newFunction(...)
-    end
-end
-
--- main
-if not _G.SimpleSpyExecuted then
-    ContentProvider:PreloadAsync({icon, icon_2})
-    property.Parent = nil
-    fTemplate.Parent = nil
-    eTemplate.Parent = nil
-    codebox.Text = ""
-    topbar.InputBegan:Connect(onBarInput)
-    minimize.MouseButton1Click:Connect(toggleMinimize)
-    methodToggle.MouseButton1Click:Connect(onToggleButtonClick)
-    remoteHandlerEvent.Event:Connect(bindableHandler)
-    onToggleButtonClick()
-    _G.SimpleSpyExecuted = true
+-- Check if queueteleport exists
+if queueteleport then
+    tpDebug("queue_on_teleport function FOUND")
 else
-    ScreenGui:Destroy()
-    collectgarbage()
+    tpDebug("queue_on_teleport function NOT FOUND - teleport persistence unavailable")
 end
 
------ ADD ONS ----- (easily add or remove additonal functionality to the RemoteSpy!)
---[[
-    Some helpful things:
-        - add your function in here, and create buttons for them through the 'newButton' function
-        - the first argument provided is the TextButton the player clicks to run the function
-        - generated scripts are generated when the namecall is initially fired and saved in remoteFrame objects
-        - blacklisted remotes will be ignored directly in namecall (less lag)
-        - the properties of a 'remoteFrame' object:
-            {
-                Name: (string) The name of the Remote
-                GenScript: (string) The generated script that appears in the codebox (generated when namecall fired)
-                Source: (Instance (LocalScript)) The script that fired/invoked the remote
-                Remote: (Instance (RemoteEvent) | Instance (RemoteFunction)) The remote that was fired/invoked
-                Log: (Instance (TextButton)) The button being used for the remote (same as 'selected.Log')
-            }
-        - globals list: (contact @exxtremewa#9394 for more information or if you have suggestions for more to be added)
-            - closed: (boolean) whether or not the GUI is currently minimized
-            - logs: (table[remoteFrame]) full of remoteFrame objects (properties listed above)
-            - selected: (remoteFrame) the currently selected remoteFrame (properties listed above)
-            - blacklist: (string[] | Instance[] (RemoteEvent) | Instance[] (RemoteFunction)) an array of blacklisted names and remotes
-            - codebox: (Instance (TextBox)) the textbox that holds all the code- cleared often
-]]
--- Copies the contents of the codebox
-newButton(
-    "Copy Code",
-    "Click to copy code",
-    function(button)
-        local orText = "Click to copy code"
-        syn.write_clipboard(codebox.Text)
-        button.Text = "Copied successfully!"
-        wait(2)
-        button.Text = orText
-    end
-)
-
---- Copies the source script (that fired the remote)
-newButton(
-    "Copy Remote",
-    "Click to copy the path of the remote",
-    function(button)
-        local orText = "Click to copy the path of the remote"
-        syn.write_clipboard(typeToString(selected.Remote))
-        button.Text = "Copied!"
-        wait(3)
-        button.Text = orText
-    end
-)
-
---- Copies the source script (that fired the remote)
-newButton(
-    "Copy Source",
-    "Click to copy the path of the source script",
-    function(button)
-        local orText = "Click to copy the path of the source script"
-        syn.write_clipboard(typeToString(selected.Source))
-        button.Text = "Copied!"
-        wait(3)
-        button.Text = orText
-    end
-)
-
---- Puts the upvalues from the remote into the console for your viewing pleasure... (also puts function #)
-newButton(
-    "Get Upvalues",
-    "Click to get the upvalues from the source",
-    function(button)
-        local orText = "Click to get upvalues from the source script"
-        codebox.Text = "-- Serialized with SimpleSpy's TableToString! (credits to @exxtremewa#9394)\n-- (getgc) Function #" .. tostring(selected.FunNum) .. "\n\n" .. selected.Upvalues
-        button.Text = "Put in Code Box!"
-        wait(3)
-        button.Text = orText
-    end
-)
-
---- Puts the constants from the remote into the console for your viewing pleasure... (also puts function #)
-newButton(
-    "Get Constants",
-    "Click to get the constants from the source",
-    function(button)
-        local orText = "Click to get constants from the source script"
-        codebox.Text = "-- Serialized with SimpleSpy's TableToString! (credits to @exxtremewa#9394)\n-- (getgc) Function #" .. tostring(selected.FunNum) .. "\n\n" .. selected.Constants
-        button.Text = "Put in Code Box!"
-        wait(3)
-        button.Text = orText
-    end
-)
-
---- Decompiles the script that fired the remote and puts it in the code box
-newButton(
-    "Decompile Source",
-    "Click to decompile the source script",
-    function(button)
-        local orText = "Click to decompile the source script"
-        codebox.Text = "-- Decompiled code from:\n-- " .. typeToString(selected.Source) .. "\n\n" .. decompile(selected.Source)
-        button.Text = "Decompiled!"
-        wait(3)
-        button.Text = orText
-    end
-)
-
--- Executes the contents of the codebox through loadstring
-newButton(
-    "Run Code",
-    "Click to execute code",
-    function(button)
-        local orText = "Click to execute code"
-        button.Text = "Executing..."
-        local execute = {
-            pcall(
-                function()
-                    return loadstring(codebox.Text)()
+-- METHOD 1: Queue at script startup (some executors need this)
+-- This queues the script to run after ANY future teleport
+if queueteleport and SCRIPT_URL then
+    local genv = getgenv and getgenv() or _G
+    
+    -- Only queue once per session to avoid duplicates
+    if not genv.LOCKON_STARTUP_QUEUED then
+        genv.LOCKON_STARTUP_QUEUED = true
+        
+        local success, err = pcall(function()
+            queueteleport([[
+                repeat task.wait() until game:IsLoaded()
+                task.wait(2)
+                local success, err = pcall(function()
+                    loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
+                end)
+                if not success then
+                    warn("[LockOn] Re-execute failed: " .. tostring(err))
                 end
-            )
-        }
-        if execute[1] then
-            button.Text = "Executed successfully!"
+            ]])
+        end)
+        
+        if success then
+            tpDebug("METHOD 1: Queued at startup - SUCCESS")
         else
-            warn(execute[2], execute[3])
-            button.Text = "Execution error!"
+            tpDebug("METHOD 1: Queued at startup - FAILED: " .. tostring(err))
         end
-        wait(3)
-        button.Text = orText
+    else
+        tpDebug("METHOD 1: Already queued this session, skipping")
     end
-)
+end
 
---- Clears the Remote logs
-newButton(
-    "Clear Logs",
-    "Click to clear logs",
-    function(button)
-        local orText = "Click to clear logs"
-        button.Text = "Clearing..."
-        logs = {}
-        for _, v in pairs(remotes:GetChildren()) do
-            if not v:IsA("UIListLayout") then
-                v:Destroy()
+--==================================================
+-- CLEANUP OLD INSTANCE & PREVENT DUPLICATES
+--==================================================
+
+local SCRIPT_KEY = "LOCKON_CAMERA_V3"
+
+-- Store connections to disconnect on cleanup
+local allConnections = {}
+
+local function cleanupOldInstance()
+    local genv = getgenv and getgenv() or _G
+    if genv[SCRIPT_KEY] then
+        local old = genv[SCRIPT_KEY]
+        
+        -- Disconnect all old connections first
+        if old.Connections then
+            for _, conn in ipairs(old.Connections) do
+                pcall(function() conn:Disconnect() end)
             end
         end
-        codebox.Text = ""
-        selected = nil
-        button.Text = "Logs cleared!"
-        wait(3)
-        button.Text = orText
+        
+        -- Call cleanup
+        if old.Cleanup then 
+            pcall(old.Cleanup) 
+        end
+        
+        -- Destroy GUI
+        if old.Gui then 
+            pcall(function() old.Gui:Destroy() end) 
+        end
+        
+        -- Unbind render step
+        if old.BindName then 
+            pcall(function() game:GetService("RunService"):UnbindFromRenderStep(old.BindName) end) 
+        end
+        
+        genv[SCRIPT_KEY] = nil
     end
-)
+    
+    -- Also clean any lingering GUIs by name pattern
+    pcall(function()
+        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then 
+                gui:Destroy() 
+            end
+        end
+    end)
+    
+    pcall(function()
+        local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then 
+            for _, gui in ipairs(pg:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then 
+                    gui:Destroy() 
+                end
+            end 
+        end
+    end)
+    
+    -- Clean hidden UI if available
+    pcall(function()
+        if gethui then
+            for _, gui in ipairs(gethui():GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then 
+                    gui:Destroy() 
+                end
+            end
+        end
+    end)
+end
 
---- Excludes the selected.Log Remote from the RemoteSpy
-newButton(
-    "Exclude (single)",
-    "Click to exclude this Remote",
-    function(button)
-        local orText = "Click to exclude this Remote"
-        table.insert(blacklist, #blacklist + 1, selected.Remote)
-        button.Text = "Excluded!"
-        wait(3)
-        button.Text = orText
-    end
-)
+cleanupOldInstance()
 
---- Excludes all Remotes that share the same name as the selected.Log remote from the RemoteSpy
-newButton(
-    "Exclude (by name)",
-    "Click to exclude all remotes with this name",
-    function(button)
-        local orText = "Click to exclude all remotes with this name"
-        table.insert(blacklist, #blacklist + 1, selected.Name)
-        button.Text = "Excluded!"
-        wait(3)
-        button.Text = orText
-    end
-)
+-- Wait a frame to ensure cleanup completed
+task.wait()
 
---- clears blacklist
-newButton(
-    "Clear Blacklist",
-    "Click to clear the blacklist",
-    function(button)
-        local orText = "Click to clear the blacklist"
-        blacklist = {}
-        button.Text = "Blacklist cleared!"
-        wait(3)
-        button.Text = orText
-    end
-)
+local genv = getgenv and getgenv() or _G
+local ScriptData = {
+    Connections = allConnections
+}
+genv[SCRIPT_KEY] = ScriptData
 
---- Prevents the selected.Log Remote from firing the server (still logged)
-newButton(
-    "Block (single)",
-    "Click to stop this remote from firing",
-    function(button)
-        local orText = "Click to stop this remote from firing"
-        table.insert(blocklist, #blocklist + 1, selected.Remote)
-        button.Text = "Excluded!"
-        wait(3)
-        button.Text = orText
-    end
-)
+if not game:IsLoaded() then game.Loaded:Wait() end
 
---- Prevents all remotes from firing that share the same name as the selected.Log remote from the RemoteSpy (still logged)
-newButton(
-    "Block (by name)",
-    "Click to stop remotes with this name from firing",
-    function(button)
-        local orText = "Click to stop remotes with this name from firing"
-        table.insert(blocklist, #blocklist + 1, selected.Name)
-        button.Text = "Excluded!"
-        wait(3)
-        button.Text = orText
-    end
-)
+--==================================================
+-- SERVICES
+--==================================================
 
---- clears blacklist
-newButton(
-    "Clear Blocklist",
-    "Click to stop blocking remotes",
-    function(button)
-        local orText = "Click to stop blocking remotes"
-        blocklist = {}
-        button.Text = "Blocklist cleared!"
-        wait(3)
-        button.Text = orText
+local cloneref = cloneref or function(o) return o end
+local Players = cloneref(game:GetService("Players"))
+local UserInputService = cloneref(game:GetService("UserInputService"))
+local RunService = cloneref(game:GetService("RunService"))
+local TweenService = cloneref(game:GetService("TweenService"))
+local HttpService = cloneref(game:GetService("HttpService"))
+local CoreGui = cloneref(game:GetService("CoreGui"))
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+-- Unique bind name with timestamp
+local BIND_NAME = "LockOnCamera_" .. localPlayer.UserId .. "_" .. tostring(tick()):gsub("%.", "")
+ScriptData.BindName = BIND_NAME
+
+local function randomString()
+    local arr = {}
+    for i = 1, math.random(12, 18) do arr[i] = string.char(math.random(97, 122)) end
+    return table.concat(arr)
+end
+
+local GUI_NAME = "LockOn_" .. randomString()
+
+-- Helper to track connections
+local function connect(signal, callback)
+    local conn = signal:Connect(callback)
+    table.insert(allConnections, conn)
+    return conn
+end
+
+--==================================================
+-- GUI PARENT SETUP
+--==================================================
+
+local PARENT = nil
+
+local function setupGuiParent()
+    -- Method 1: gethui (best for exploits)
+    if gethui then
+        pcall(function() PARENT = gethui() end)
+        if PARENT then return end
     end
-)
+    
+    if get_hidden_gui then
+        pcall(function() PARENT = get_hidden_gui() end)
+        if PARENT then return end
+    end
+    
+    -- Method 2: syn.protect_gui
+    if syn and syn.protect_gui then
+        pcall(function()
+            local m = Instance.new("ScreenGui")
+            m.Name = GUI_NAME .. "_container"
+            syn.protect_gui(m)
+            m.Parent = CoreGui
+            PARENT = m
+        end)
+        if PARENT then return end
+    end
+    
+    -- Method 3: Direct CoreGui
+    pcall(function()
+        local m = Instance.new("ScreenGui")
+        m.Name = GUI_NAME .. "_container"
+        m.Parent = CoreGui
+        PARENT = m
+    end)
+    if PARENT then return end
+    
+    -- Method 4: RobloxGui
+    if CoreGui:FindFirstChild("RobloxGui") then 
+        PARENT = CoreGui.RobloxGui
+        return 
+    end
+    
+    -- Method 5: PlayerGui fallback
+    PARENT = localPlayer:WaitForChild("PlayerGui")
+end
+
+setupGuiParent()
+
+connect(workspace:GetPropertyChangedSignal("CurrentCamera"), function() 
+    camera = workspace.CurrentCamera 
+end)
+
+--==================================================
+-- MODULE LOADER
+--==================================================
+
+local function loadModule(url)
+    local s, r = pcall(function() return loadstring(game:HttpGet(url))() end)
+    return s and r or nil
+end
+
+local ShiftLockModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/ShiftLockModule.lua")
+local TargetingModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTargetingModule.lua")
+local VisualModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnVisualModule.lua")
+
+local shiftLock = ShiftLockModule and ShiftLockModule.new(localPlayer)
+local friendlies = {}
+local targeting = TargetingModule and TargetingModule.new(localPlayer, camera)
+if targeting then targeting:SetFriendliesTable(friendlies) end
+local visuals = VisualModule and VisualModule.new(localPlayer)
+
+--==================================================
+-- ANIMATED THEMES
+--==================================================
+
+local THEMES = {
+    Ember = {
+        primary1 = Color3.fromRGB(255, 60, 30),
+        primary2 = Color3.fromRGB(200, 40, 80),
+        secondary = Color3.fromRGB(35, 25, 30),
+        background = Color3.fromRGB(20, 15, 18),
+        text = Color3.fromRGB(255, 245, 240),
+        glow = Color3.fromRGB(255, 100, 50),
+        animSpeed = 2,
+    },
+    Ocean = {
+        primary1 = Color3.fromRGB(30, 144, 255),
+        primary2 = Color3.fromRGB(0, 200, 200),
+        secondary = Color3.fromRGB(20, 35, 50),
+        background = Color3.fromRGB(12, 22, 35),
+        text = Color3.fromRGB(220, 240, 255),
+        glow = Color3.fromRGB(50, 180, 255),
+        animSpeed = 3,
+    },
+    Void = {
+        primary1 = Color3.fromRGB(150, 50, 255),
+        primary2 = Color3.fromRGB(255, 50, 150),
+        secondary = Color3.fromRGB(25, 20, 40),
+        background = Color3.fromRGB(15, 12, 25),
+        text = Color3.fromRGB(240, 230, 255),
+        glow = Color3.fromRGB(180, 100, 255),
+        animSpeed = 2.5,
+    },
+    Neon = {
+        primary1 = Color3.fromRGB(0, 255, 150),
+        primary2 = Color3.fromRGB(0, 200, 255),
+        secondary = Color3.fromRGB(15, 25, 25),
+        background = Color3.fromRGB(8, 15, 15),
+        text = Color3.fromRGB(220, 255, 250),
+        glow = Color3.fromRGB(0, 255, 200),
+        animSpeed = 1.5,
+    },
+    Sunset = {
+        primary1 = Color3.fromRGB(255, 100, 50),
+        primary2 = Color3.fromRGB(255, 50, 150),
+        secondary = Color3.fromRGB(45, 30, 40),
+        background = Color3.fromRGB(30, 20, 28),
+        text = Color3.fromRGB(255, 245, 240),
+        glow = Color3.fromRGB(255, 130, 80),
+        animSpeed = 3,
+    },
+    Frost = {
+        primary1 = Color3.fromRGB(180, 220, 255),
+        primary2 = Color3.fromRGB(150, 200, 255),
+        secondary = Color3.fromRGB(40, 50, 65),
+        background = Color3.fromRGB(25, 35, 50),
+        text = Color3.fromRGB(240, 250, 255),
+        glow = Color3.fromRGB(150, 200, 255),
+        animSpeed = 4,
+    },
+    Toxic = {
+        primary1 = Color3.fromRGB(150, 255, 0),
+        primary2 = Color3.fromRGB(0, 255, 100),
+        secondary = Color3.fromRGB(25, 35, 20),
+        background = Color3.fromRGB(15, 22, 12),
+        text = Color3.fromRGB(230, 255, 220),
+        glow = Color3.fromRGB(120, 255, 50),
+        animSpeed = 2,
+    },
+    Blood = {
+        primary1 = Color3.fromRGB(180, 0, 0),
+        primary2 = Color3.fromRGB(120, 0, 50),
+        secondary = Color3.fromRGB(35, 15, 20),
+        background = Color3.fromRGB(20, 10, 12),
+        text = Color3.fromRGB(255, 220, 220),
+        glow = Color3.fromRGB(200, 50, 50),
+        animSpeed = 2.5,
+    },
+}
+
+local currentThemeName = "Ember"
+local currentTheme = THEMES.Ember
+local themeAnimationActive = true
+local animatedElements = {}
+local themeAnimTime = 0
+
+local function lerpColor(c1, c2, t)
+    return Color3.new(
+        c1.R + (c2.R - c1.R) * t,
+        c1.G + (c2.G - c1.G) * t,
+        c1.B + (c2.B - c1.B) * t
+    )
+end
+
+-- Safe animation loop
+connect(RunService.Heartbeat, function(dt)
+    if not themeAnimationActive or not currentTheme then return end
+    
+    themeAnimTime = themeAnimTime + dt * (currentTheme.animSpeed or 2)
+    local t = (math.sin(themeAnimTime) + 1) / 2
+    local animColor = lerpColor(currentTheme.primary1, currentTheme.primary2, t)
+    
+    -- Clean up dead elements and animate live ones
+    local toRemove = {}
+    for element, elementType in pairs(animatedElements) do
+        if element and typeof(element) == "Instance" and element.Parent then
+            local success = pcall(function()
+                if elementType == "background" then
+                    element.BackgroundColor3 = animColor
+                elseif elementType == "text" then
+                    element.TextColor3 = animColor
+                elseif elementType == "stroke" then
+                    element.Color = animColor
+                end
+            end)
+            if not success then
+                table.insert(toRemove, element)
+            end
+        else
+            table.insert(toRemove, element)
+        end
+    end
+    
+    -- Remove dead elements
+    for _, el in ipairs(toRemove) do
+        animatedElements[el] = nil
+    end
+end)
+
+--==================================================
+-- TOOLTIP SYSTEM
+--==================================================
+
+local tooltipsEnabled, tooltipLabel, currentHover = false, nil, nil
+
+local function setupTooltip(gui)
+    tooltipLabel = Instance.new("TextLabel")
+    tooltipLabel.Name = "Tooltip"
+    tooltipLabel.AutomaticSize = Enum.AutomaticSize.XY
+    tooltipLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+    tooltipLabel.BackgroundTransparency = 0.1
+    tooltipLabel.BorderSizePixel = 0
+    tooltipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tooltipLabel.Font = Enum.Font.Gotham
+    tooltipLabel.TextSize = 11
+    tooltipLabel.Visible = false
+    tooltipLabel.ZIndex = 9999
+    tooltipLabel.Parent = gui
+    Instance.new("UICorner", tooltipLabel).CornerRadius = UDim.new(0, 6)
+    local p = Instance.new("UIPadding", tooltipLabel)
+    p.PaddingLeft, p.PaddingRight, p.PaddingTop, p.PaddingBottom = UDim.new(0,10), UDim.new(0,10), UDim.new(0,6), UDim.new(0,6)
+    local stroke = Instance.new("UIStroke", tooltipLabel)
+    stroke.Thickness = 1
+    animatedElements[stroke] = "stroke"
+end
+
+local function addTooltip(el, txt)
+    connect(el.MouseEnter, function()
+        currentHover = el
+        if tooltipsEnabled and tooltipLabel then 
+            tooltipLabel.Text = txt
+            tooltipLabel.Visible = true 
+        end
+    end)
+    connect(el.MouseLeave, function()
+        if currentHover == el then 
+            currentHover = nil
+            if tooltipLabel then tooltipLabel.Visible = false end 
+        end
+    end)
+end
+
+local function toggleTooltips() 
+    tooltipsEnabled = not tooltipsEnabled
+    if not tooltipsEnabled and tooltipLabel then tooltipLabel.Visible = false end 
+end
+
+connect(RunService.RenderStepped, function()
+    if tooltipsEnabled and tooltipLabel and tooltipLabel.Visible then
+        local m = UserInputService:GetMouseLocation()
+        tooltipLabel.Position = UDim2.new(0, m.X + 15, 0, m.Y + 5)
+    end
+end)
+
+--==================================================
+-- STATE VARIABLES
+--==================================================
+
+local lockedOn, currentTarget, currentTargetType = false, nil, "player"
+local exactMode, autoSwapEnabled, closeSwapEnabled = false, false, false
+local visibilityCheckEnabled, checkHealthEnabled = false, false
+local autoRelockEnabled, realisticEnabled = false, false
+local autoRelockPending, rangeLimit, invisibleTime = false, 0, 0
+local prevCameraType = camera and camera.CameraType or Enum.CameraType.Custom
+local npcModeEnabled, npcHighlight = false, nil
+local smoothness = 0.25
+
+local keybinds = {
+    LockOn = Enum.KeyCode.X,
+    SwapTarget = Enum.KeyCode.C,
+    HardLock = Enum.KeyCode.V,
+    ReverseLock = Enum.KeyCode.B,
+}
+
+local hardLockKeyEnabled, waitingForKeybind = true, nil
+local SLIDER_MIN, SLIDER_MAX, lockHeightOffset = -5, 5, 0
+local lastLookDir = Vector3.new(0, 0, -1)
+local reverseLockEnabled, reverseLockHeld = false, false
+local perfectOffsetEnabled, PERFECT_OFFSET_STUDS = false, 2.5
+local mouseTargetMode = false
+local predictionEnabled = false
+local predictionStrength = 0.15
+local forceCameraMode = false -- Alternative camera mode for games that mess with camera
+
+--==================================================
+-- UI REFERENCES
+--==================================================
+
+local gui, mainFrame, openBtn, closeBtn, infoToggleButton, headerLabel
+local tabMainButton, tabVisualButton, tabTargetButton
+local mainPage, visualPage, targetPage
+local hardLockButton, highlightButton, highlightSecondButton, selfFadeButton
+local autoswapButton, closeSwapButton, checkVisibilityButton, checkHealthButton
+local autoRelockButton, realisticButton, centerShiftlockButton
+local lockOnKeyButton, swapKeyButton, hardLockKeyButton, hardLockKeyToggleButton
+local mouseTargetButton, friendsList
+local heightLabel, heightSliderBar, heightSliderKnob, rangeInput
+local extraSettingsFrame, extraSettingsButton, extraSettingsCloseButton
+local reverseLockButton, reverseKeyButton, perfectOffsetButton
+local npcModeButton, predictionButton, forceCameraButton
+local saveButton, loadButton
+local themeButtons = {}
+
+--==================================================
+-- SAVE/LOAD SYSTEM
+--==================================================
+
+local SAVE_KEY = "LockOnCameraSettings_v4"
+
+local function saveSettings()
+    local success = pcall(function()
+        local data = {
+            theme = currentThemeName,
+            exactMode = exactMode,
+            autoSwapEnabled = autoSwapEnabled,
+            closeSwapEnabled = closeSwapEnabled,
+            visibilityCheckEnabled = visibilityCheckEnabled,
+            checkHealthEnabled = checkHealthEnabled,
+            autoRelockEnabled = autoRelockEnabled,
+            realisticEnabled = realisticEnabled,
+            rangeLimit = rangeLimit,
+            lockHeightOffset = lockHeightOffset,
+            highlightEnabled = visuals and visuals:IsHighlightEnabled() or false,
+            highlightSecondEnabled = visuals and visuals:IsHighlightSecondEnabled() or false,
+            selfFadeEnabled = visuals and visuals:IsSelfFadeEnabled() or false,
+            reverseLockEnabled = reverseLockEnabled,
+            perfectOffsetEnabled = perfectOffsetEnabled,
+            mouseTargetMode = mouseTargetMode,
+            hardLockKeyEnabled = hardLockKeyEnabled,
+            npcModeEnabled = npcModeEnabled,
+            predictionEnabled = predictionEnabled,
+            forceCameraMode = forceCameraMode,
+            kb_LockOn = keybinds.LockOn.Name,
+            kb_SwapTarget = keybinds.SwapTarget.Name,
+            kb_HardLock = keybinds.HardLock.Name,
+            kb_ReverseLock = keybinds.ReverseLock.Name,
+        }
+        if writefile then
+            writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
+        end
+    end)
+    return success
+end
+
+local function loadSettingsData()
+    local success, data = pcall(function()
+        if not readfile or not isfile then return nil end
+        for _, key in ipairs({SAVE_KEY, "LockOnCameraSettings_v3", "LockOnCameraSettings_v2"}) do
+            if isfile(key .. ".json") then
+                return HttpService:JSONDecode(readfile(key .. ".json"))
+            end
+        end
+        return nil
+    end)
+    return success and data or nil
+end
+
+local function applySettingsData(data)
+    if not data then return false end
+    
+    if data.theme and THEMES[data.theme] then
+        currentThemeName = data.theme
+        currentTheme = THEMES[data.theme]
+    end
+    
+    exactMode = (data.exactMode == true)
+    autoSwapEnabled = (data.autoSwapEnabled == true)
+    closeSwapEnabled = (data.closeSwapEnabled == true)
+    visibilityCheckEnabled = (data.visibilityCheckEnabled == true)
+    checkHealthEnabled = (data.checkHealthEnabled == true)
+    autoRelockEnabled = (data.autoRelockEnabled == true)
+    realisticEnabled = (data.realisticEnabled == true)
+    reverseLockEnabled = (data.reverseLockEnabled == true)
+    perfectOffsetEnabled = (data.perfectOffsetEnabled == true)
+    mouseTargetMode = (data.mouseTargetMode == true)
+    npcModeEnabled = (data.npcModeEnabled == true)
+    predictionEnabled = (data.predictionEnabled == true)
+    forceCameraMode = (data.forceCameraMode == true)
+    hardLockKeyEnabled = (data.hardLockKeyEnabled ~= false)
+    
+    rangeLimit = tonumber(data.rangeLimit) or 0
+    lockHeightOffset = tonumber(data.lockHeightOffset) or 0
+    
+    -- New keybind format
+    if data.kb_LockOn and Enum.KeyCode[data.kb_LockOn] then keybinds.LockOn = Enum.KeyCode[data.kb_LockOn] end
+    if data.kb_SwapTarget and Enum.KeyCode[data.kb_SwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.kb_SwapTarget] end
+    if data.kb_HardLock and Enum.KeyCode[data.kb_HardLock] then keybinds.HardLock = Enum.KeyCode[data.kb_HardLock] end
+    if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
+    
+    -- Old formats
+    if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
+    if data.keybindSwapTarget and Enum.KeyCode[data.keybindSwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.keybindSwapTarget] end
+    if data.keybindHardLock and Enum.KeyCode[data.keybindHardLock] then keybinds.HardLock = Enum.KeyCode[data.keybindHardLock] end
+    if data.keybindReverseLock and Enum.KeyCode[data.keybindReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.keybindReverseLock] end
+    if data.keybinds then
+        for k, v in pairs(data.keybinds) do
+            if Enum.KeyCode[v] then keybinds[k] = Enum.KeyCode[v] end
+        end
+    end
+    
+    if visuals then
+        pcall(function()
+            visuals:SetHighlightEnabled(data.highlightEnabled == true)
+            visuals:SetHighlightSecondEnabled(data.highlightSecondEnabled == true)
+            visuals:SetSelfFadeEnabled(data.selfFadeEnabled == true)
+        end)
+    end
+    
+    return true
+end
+
+--==================================================
+-- UTILITY FUNCTIONS
+--==================================================
+
+local function getRootPart(char)
+    return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+end
+
+local function getHumanoid(char) return char and char:FindFirstChildOfClass("Humanoid") end
+local function isFriendly(plr) return friendlies[plr.UserId] == true end
+
+local function syncTargetingOptions()
+    if targeting then 
+        pcall(function()
+            targeting:SetOptions({ 
+                realisticEnabled = realisticEnabled, 
+                checkHealthEnabled = checkHealthEnabled, 
+                visibilityCheckEnabled = visibilityCheckEnabled, 
+                rangeLimit = rangeLimit 
+            }) 
+        end)
+    end
+end
+
+local function isValidTarget(char)
+    if not char or not char.Parent then return false end
+    local hum, root = getHumanoid(char), getRootPart(char)
+    if not hum or not root then return false end
+    if checkHealthEnabled then
+        if hum.Health <= 0 then return false end
+        if char:FindFirstChildOfClass("ForceField") then return false end
+        pcall(function()
+            if hum:GetState() == Enum.HumanoidStateType.Dead then return false end
+        end)
+        if hum.WalkSpeed == 0 and hum.Health < hum.MaxHealth * 0.1 then return false end
+    end
+    return true
+end
+
+--==================================================
+-- NPC SYSTEM
+--==================================================
+
+local function isNPC(model)
+    if not model:IsA("Model") then return false end
+    local hum, root = getHumanoid(model), getRootPart(model)
+    if not hum or not root then return false end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character == model then return false end
+    end
+    return model ~= localPlayer.Character
+end
+
+local function searchForNPCs(container, npcs, myRoot, depth)
+    if depth > 4 then return end
+    for _, child in ipairs(container:GetChildren()) do
+        if child:IsA("Model") and isNPC(child) and isValidTarget(child) then
+            local root = getRootPart(child)
+            if root then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if rangeLimit == 0 or dist <= rangeLimit then
+                    table.insert(npcs, {model = child, distance = dist})
+                end
+            end
+        end
+        if child:IsA("Folder") or child:IsA("Model") then
+            local name = child.Name:lower()
+            if not (name == "camera" or name == "terrain" or name == "lighting" or name == "chat" or name == "sounds") then
+                searchForNPCs(child, npcs, myRoot, depth + 1)
+            end
+        end
+    end
+end
+
+local function findNPCsNow()
+    local npcs, myRoot = {}, getRootPart(localPlayer.Character)
+    if not myRoot then return npcs end
+    searchForNPCs(workspace, npcs, myRoot, 0)
+    table.sort(npcs, function(a, b) return a.distance < b.distance end)
+    return npcs
+end
+
+local function updateNPCHighlight()
+    if npcHighlight then pcall(function() npcHighlight:Destroy() end); npcHighlight = nil end
+    if currentTargetType == "npc" and currentTarget and visuals and visuals:IsHighlightEnabled() then
+        npcHighlight = Instance.new("Highlight")
+        npcHighlight.FillColor = currentTheme.primary1
+        npcHighlight.OutlineColor = currentTheme.glow
+        npcHighlight.FillTransparency = 0.5
+        npcHighlight.OutlineTransparency = 0
+        npcHighlight.Adornee = currentTarget
+        npcHighlight.Parent = currentTarget
+    end
+end
+
+--==================================================
+-- UI UPDATE FUNCTIONS
+--==================================================
+
+local function keyCodeToText(kc) return typeof(kc) == "EnumItem" and kc.Name or "None" end
+
+local function refreshAllUI()
+    pcall(function()
+        if hardLockButton then hardLockButton.Text = "Hard lock: " .. (exactMode and "ON" or "OFF") end
+        if highlightButton then highlightButton.Text = "Highlight: " .. (visuals and visuals:IsHighlightEnabled() and "ON" or "OFF") end
+        if highlightSecondButton then highlightSecondButton.Text = "2nd closest: " .. (visuals and visuals:IsHighlightSecondEnabled() and "ON" or "OFF") end
+        if selfFadeButton then selfFadeButton.Text = "Self fade: " .. (visuals and visuals:IsSelfFadeEnabled() and "ON" or "OFF") end
+        if autoswapButton then autoswapButton.Text = "Autoswap: " .. (autoSwapEnabled and "ON" or "OFF") end
+        if closeSwapButton then closeSwapButton.Text = "CloseSwap: " .. (closeSwapEnabled and "ON" or "OFF") end
+        if checkVisibilityButton then checkVisibilityButton.Text = "Visibility check: " .. (visibilityCheckEnabled and "ON" or "OFF") end
+        if checkHealthButton then checkHealthButton.Text = "Check health/FF: " .. (checkHealthEnabled and "ON" or "OFF") end
+        if autoRelockButton then autoRelockButton.Text = "Auto relock: " .. (autoRelockEnabled and "ON" or "OFF") end
+        if realisticButton then realisticButton.Text = "Realistic (front): " .. (realisticEnabled and "ON" or "OFF") end
+        if reverseLockButton then reverseLockButton.Text = "Reverse lock: " .. (reverseLockEnabled and "ON" or "OFF") end
+        if mouseTargetButton then mouseTargetButton.Text = "Mouse target: " .. (mouseTargetMode and "ON" or "OFF") end
+        if perfectOffsetButton then perfectOffsetButton.Text = "Perfect offset: " .. (perfectOffsetEnabled and "ON" or "OFF") end
+        if npcModeButton then npcModeButton.Text = "NPC Mode: " .. (npcModeEnabled and "ON" or "OFF") end
+        if predictionButton then predictionButton.Text = "Prediction: " .. (predictionEnabled and "ON" or "OFF") end
+        if forceCameraButton then forceCameraButton.Text = "Force Camera: " .. (forceCameraMode and "ON" or "OFF") end
+        if lockOnKeyButton then lockOnKeyButton.Text = "Lock-on: " .. keyCodeToText(keybinds.LockOn) end
+        if swapKeyButton then swapKeyButton.Text = "Swap: " .. keyCodeToText(keybinds.SwapTarget) end
+        if hardLockKeyButton then hardLockKeyButton.Text = "Hard-lock: " .. keyCodeToText(keybinds.HardLock) end
+        if hardLockKeyToggleButton then hardLockKeyToggleButton.Text = hardLockKeyEnabled and "On" or "Off" end
+        if reverseKeyButton then reverseKeyButton.Text = "Reverse: " .. keyCodeToText(keybinds.ReverseLock) end
+        if heightLabel then heightLabel.Text = string.format("Height: %.1f", lockHeightOffset) end
+        if heightSliderKnob and heightSliderKnob.Parent then 
+            heightSliderKnob.Position = UDim2.new((lockHeightOffset - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN), 0, 0.5, 0) 
+        end
+        if rangeInput then rangeInput.Text = tostring(rangeLimit) end
+    end)
+end
+
+local function applyThemeToUI()
+    local t = currentTheme
+    if not t then return end
+    
+    pcall(function()
+        if mainFrame then mainFrame.BackgroundColor3 = t.background end
+        if extraSettingsFrame then extraSettingsFrame.BackgroundColor3 = t.background end
+        
+        local btns = {
+            closeBtn, infoToggleButton, tabMainButton, tabVisualButton, tabTargetButton,
+            hardLockButton, highlightButton, highlightSecondButton, selfFadeButton,
+            autoswapButton, closeSwapButton, checkVisibilityButton, checkHealthButton,
+            autoRelockButton, realisticButton, centerShiftlockButton,
+            lockOnKeyButton, swapKeyButton, hardLockKeyButton, hardLockKeyToggleButton,
+            mouseTargetButton, extraSettingsButton, extraSettingsCloseButton,
+            reverseLockButton, reverseKeyButton, perfectOffsetButton,
+            npcModeButton, predictionButton, forceCameraButton, saveButton, loadButton
+        }
+        
+        for _, b in ipairs(btns) do
+            if b and b.Parent then
+                b.BackgroundColor3 = t.secondary
+                b.TextColor3 = t.text
+            end
+        end
+        
+        if openBtn and openBtn.Parent then
+            openBtn.BackgroundColor3 = t.secondary
+            openBtn.TextColor3 = t.text
+        end
+        
+        for tName, btn in pairs(themeButtons) do
+            if btn and btn.Parent then
+                if tName == currentThemeName then
+                    animatedElements[btn] = "background"
+                else
+                    animatedElements[btn] = nil
+                    btn.BackgroundColor3 = t.secondary
+                end
+                btn.TextColor3 = t.text
+            end
+        end
+        
+        if headerLabel and headerLabel.Parent then headerLabel.TextColor3 = t.text; animatedElements[headerLabel] = "text" end
+        if heightLabel and heightLabel.Parent then heightLabel.TextColor3 = t.text end
+        if heightSliderBar and heightSliderBar.Parent then heightSliderBar.BackgroundColor3 = t.secondary end
+        if heightSliderKnob and heightSliderKnob.Parent then animatedElements[heightSliderKnob] = "background" end
+        if rangeInput and rangeInput.Parent then rangeInput.BackgroundColor3 = t.secondary; rangeInput.TextColor3 = t.text end
+        if friendsList and friendsList.Parent then friendsList.BackgroundColor3 = t.secondary end
+        if mainPage and mainPage.Parent then mainPage.ScrollBarImageColor3 = t.primary1 end
+        if visualPage and visualPage.Parent then visualPage.ScrollBarImageColor3 = t.primary1 end
+        if targetPage and targetPage.Parent then targetPage.ScrollBarImageColor3 = t.primary1 end
+    end)
+end
+
+local function setTheme(name)
+    if THEMES[name] then
+        currentThemeName = name
+        currentTheme = THEMES[name]
+        themeAnimTime = 0
+        applyThemeToUI()
+        rebuildFriendsList()
+    end
+end
+
+--==================================================
+-- FRIENDLIES LIST
+--==================================================
+
+function rebuildFriendsList()
+    if not friendsList or not friendsList.Parent then return end
+    pcall(function()
+        friendsList:ClearAllChildren()
+        local uiList = Instance.new("UIListLayout", friendsList)
+        uiList.SortOrder = Enum.SortOrder.LayoutOrder
+        uiList.Padding = UDim.new(0, 3)
+        local idx = 0
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= localPlayer then
+                idx += 1
+                local item = Instance.new("TextButton")
+                item.Size = UDim2.new(1, -6, 0, 24)
+                item.BackgroundColor3 = isFriendly(plr) and currentTheme.primary1 or currentTheme.secondary
+                item.TextColor3 = currentTheme.text
+                item.Font = Enum.Font.Gotham
+                item.TextSize = 12
+                item.Text = plr.Name .. (isFriendly(plr) and " ✓" or "")
+                item.BorderSizePixel = 0
+                item.Parent = friendsList
+                Instance.new("UICorner", item).CornerRadius = UDim.new(0, 6)
+                item.MouseButton1Click:Connect(function()
+                    if isFriendly(plr) then friendlies[plr.UserId] = nil
+                    else friendlies[plr.UserId] = true; if currentTarget == plr then lockedOn, currentTarget = false, nil end end
+                    rebuildFriendsList()
+                end)
+            end
+        end
+        friendsList.CanvasSize = UDim2.new(0, 0, 0, idx * 27)
+    end)
+end
+
+connect(Players.PlayerAdded, rebuildFriendsList)
+connect(Players.PlayerRemoving, function(plr) 
+    friendlies[plr.UserId] = nil
+    if currentTarget == plr then lockedOn, currentTarget = false, nil end
+    rebuildFriendsList() 
+end)
+
+--==================================================
+-- CLEANUP & KILL SWITCH
+--==================================================
+
+local function fullCleanup()
+    themeAnimationActive = false
+    forceCameraMode = false
+    
+    -- Disconnect all connections
+    for _, conn in ipairs(allConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    allConnections = {}
+    
+    -- Cleanup force camera hooks
+    pcall(function() RunService:UnbindFromRenderStep("LockOnForceCamera") end)
+    if forceUpdateConnection then
+        pcall(function() forceUpdateConnection:Disconnect() end)
+        forceUpdateConnection = nil
+    end
+    
+    lockedOn, currentTarget = false, nil
+    pcall(function() if camera then camera.CameraType = prevCameraType end end)
+    pcall(function() RunService:UnbindFromRenderStep(BIND_NAME) end)
+    pcall(function() if shiftLock then shiftLock:Destroy() end end)
+    pcall(function() if visuals then visuals:Destroy() end end)
+    pcall(function() if npcHighlight then npcHighlight:Destroy() end end)
+    for id in pairs(friendlies) do friendlies[id] = nil end
+    pcall(function() if gui then gui:Destroy() end end)
+    animatedElements = {}
+end
+
+ScriptData.Cleanup = fullCleanup
+ScriptData.Connections = allConnections
+
+connect(localPlayer.Chatted, function(msg)
+    if msg:lower() == "/e stop" then
+        local genv2 = getgenv and getgenv() or _G
+        genv2[SCRIPT_KEY] = nil
+        fullCleanup()
+        print("🛑 Lock-On Camera unloaded!")
+    end
+end)
+
+--==================================================
+-- TARGETING FUNCTIONS
+--==================================================
+
+-- Track target's character respawn to refresh highlights
+local targetCharConn = nil
+
+local function unlockCamera(manual)
+    -- Disconnect target listener
+    if targetCharConn then
+        pcall(function() targetCharConn:Disconnect() end)
+        targetCharConn = nil
+    end
+    
+    lockedOn, currentTarget, currentTargetType = false, nil, "player"
+    pcall(function() camera.CameraType = prevCameraType end)
+    invisibleTime = 0
+    autoRelockPending = not manual and autoRelockEnabled
+    updateNPCHighlight()
+end
+
+local function setNewTarget(target, tType)
+    -- Disconnect old target listener
+    if targetCharConn then
+        pcall(function() targetCharConn:Disconnect() end)
+        targetCharConn = nil
+    end
+    
+    currentTarget, currentTargetType, lockedOn, invisibleTime = target, tType or "player", true, 0
+    local char = (currentTargetType == "player") and target.Character or target
+    local root = getRootPart(char)
+    if root and camera then 
+        local d = (root.Position - camera.CFrame.Position)
+        if d.Magnitude > 0 then lastLookDir = d.Unit end 
+    end
+    updateNPCHighlight()
+    
+    -- Listen for target's character respawn (player targets only)
+    if currentTargetType == "player" and target then
+        targetCharConn = target.CharacterAdded:Connect(function(newChar)
+            -- Wait for character to load
+            task.delay(0.3, function()
+                if lockedOn and currentTarget == target then
+                    -- Refresh visuals for the new character
+                    refreshVisuals()
+                end
+            end)
+        end)
+        table.insert(allConnections, targetCharConn)
+    end
+end
+
+local function getBestTarget(exclude) return targeting and targeting:GetBestTarget(exclude) end
+
+-- Find target closest to mouse cursor
+local function findMouseTarget()
+    local mousePos = UserInputService:GetMouseLocation()
+    local myRoot = getRootPart(localPlayer.Character)
+    if not myRoot or not camera then return nil, nil end
+    
+    local best, bestType, bestDist = nil, nil, math.huge
+    
+    -- Check players
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= localPlayer and not isFriendly(plr) then
+            local char = plr.Character
+            local root = getRootPart(char)
+            if root and isValidTarget(char) then
+                -- Get screen position of target
+                local screenPos, onScreen = camera:WorldToScreenPoint(root.Position)
+                if onScreen then
+                    local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    local worldDist = (root.Position - myRoot.Position).Magnitude
+                    
+                    -- Check range limit
+                    if rangeLimit == 0 or worldDist <= rangeLimit then
+                        -- Check realistic mode (front only)
+                        local valid = true
+                        if realisticEnabled then
+                            local dot = (root.Position - myRoot.Position).Unit:Dot(myRoot.CFrame.LookVector)
+                            if dot < 0 then valid = false end
+                        end
+                        
+                        if valid and screenDist < bestDist then
+                            bestDist, best, bestType = screenDist, plr, "player"
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Check NPCs if enabled
+    if npcModeEnabled then
+        for _, data in ipairs(findNPCsNow()) do
+            local root = getRootPart(data.model)
+            if root then
+                local screenPos, onScreen = camera:WorldToScreenPoint(root.Position)
+                if onScreen then
+                    local screenDist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    
+                    local valid = true
+                    if realisticEnabled then
+                        local dot = (root.Position - myRoot.Position).Unit:Dot(myRoot.CFrame.LookVector)
+                        if dot < 0 then valid = false end
+                    end
+                    
+                    if valid and screenDist < bestDist then
+                        bestDist, best, bestType = screenDist, data.model, "npc"
+                    end
+                end
+            end
+        end
+    end
+    
+    return best, bestType
+end
+
+local function findBestTargetCombined(exclude)
+    local myRoot = getRootPart(localPlayer.Character)
+    if not myRoot then return nil, nil end
+    local best, bestType, bestDist = nil, nil, math.huge
+    
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= localPlayer and plr ~= exclude and not isFriendly(plr) then
+            local char, root = plr.Character, getRootPart(plr.Character)
+            if root and isValidTarget(char) then
+                local dist = (root.Position - myRoot.Position).Magnitude
+                if (rangeLimit == 0 or dist <= rangeLimit) and dist < bestDist then
+                    local valid = true
+                    if realisticEnabled then
+                        local dot = (root.Position - myRoot.Position).Unit:Dot(myRoot.CFrame.LookVector)
+                        if dot < 0 then valid = false end
+                    end
+                    if valid then bestDist, best, bestType = dist, plr, "player" end
+                end
+            end
+        end
+    end
+    
+    if npcModeEnabled then
+        for _, data in ipairs(findNPCsNow()) do
+            if data.model ~= exclude and data.distance < bestDist then
+                local root = getRootPart(data.model)
+                if root and (not realisticEnabled or (root.Position - myRoot.Position).Unit:Dot(myRoot.CFrame.LookVector) >= 0) then
+                    bestDist, best, bestType = data.distance, data.model, "npc"
+                end
+            end
+        end
+    end
+    
+    return best, bestType
+end
+
+local function refreshVisuals()
+    if visuals then
+        pcall(function()
+            if currentTargetType == "player" then 
+                visuals:UpdateHighlights(currentTarget, lockedOn, function(ex) return getBestTarget(ex) end, isFriendly)
+            else 
+                visuals:UpdateHighlights(nil, false, function() return nil end, isFriendly) 
+            end
+        end)
+    end
+end
+
+--==================================================
+-- CAMERA UPDATE
+--==================================================
+
+local lastTargetPos = nil
+local lastCameraCheck = 0
+local forceCameraRef = nil -- Our own camera reference for force mode
+local forceUpdateConnection = nil -- Secondary high-priority update
+
+-- Aggressive camera override for games with custom camera scripts
+-- Only overrides ROTATION to look at target, keeps game's camera POSITION
+local function forceCameraUpdate()
+    if not forceCameraMode or not lockedOn or not currentTarget then return end
+    
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    
+    local myChar = localPlayer.Character
+    if not myChar then return end
+    
+    local myRoot = getRootPart(myChar)
+    local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
+    local targetRoot = getRootPart(targetChar)
+    
+    if not myRoot or not targetRoot then return end
+    
+    -- Get current camera position (let game control this)
+    local camPos = cam.CFrame.Position
+    
+    -- Calculate look direction to target
+    local lookPos = targetRoot.Position + Vector3.new(0, lockHeightOffset, 0)
+    
+    if predictionEnabled and lastTargetPos then
+        local vel = (targetRoot.Position - lastTargetPos)
+        lookPos = lookPos + vel * predictionStrength
+    end
+    
+    local desiredDir = lookPos - camPos
+    local dir = desiredDir.Magnitude > 0.5 and desiredDir.Unit or lastLookDir
+    lastLookDir = dir
+    
+    if reverseLockEnabled and reverseLockHeld then
+        local baseDir = (lookPos - myRoot.Position)
+        if baseDir.Magnitude > 0.001 then
+            local horiz = Vector3.new(-baseDir.Unit.X, 0, -baseDir.Unit.Z)
+            if horiz.Magnitude > 0.001 then dir = (horiz.Unit + Vector3.new(0, baseDir.Unit.Y, 0)).Unit end
+        end
+    end
+    
+    if perfectOffsetEnabled then
+        local horiz = Vector3.new(dir.X, 0, dir.Z)
+        if horiz.Magnitude > 0.001 then
+            local right = horiz.Unit:Cross(Vector3.new(0, 1, 0))
+            local off = (lookPos + right * PERFECT_OFFSET_STUDS) - camPos
+            if off.Magnitude > 0.5 then dir = off.Unit end
+        end
+    end
+    
+    -- ONLY change rotation, keep the game's camera position intact
+    local targetCF = CFrame.new(camPos, camPos + dir)
+    
+    if exactMode then
+        cam.CFrame = targetCF
+    else
+        -- Smoothly rotate while keeping position
+        local currentLook = cam.CFrame.LookVector
+        local newLook = currentLook:Lerp(dir, 0.5)
+        if newLook.Magnitude > 0.001 then
+            cam.CFrame = CFrame.new(camPos, camPos + newLook)
+        end
+    end
+end
+
+-- Setup/teardown force camera hooks
+local function setupForceCameraHooks()
+    -- Disconnect old hook if exists
+    if forceUpdateConnection then
+        pcall(function() forceUpdateConnection:Disconnect() end)
+        forceUpdateConnection = nil
+    end
+    
+    if forceCameraMode then
+        -- Bind at HIGHEST priority (after everything else) to override game camera
+        -- Using Camera.Value + 100 ensures we run AFTER most game scripts
+        pcall(function()
+            RunService:UnbindFromRenderStep("LockOnForceCamera")
+        end)
+        
+        RunService:BindToRenderStep("LockOnForceCamera", Enum.RenderPriority.Camera.Value + 100, forceCameraUpdate)
+        
+        -- Also connect to RenderStepped as backup (runs every frame)
+        forceUpdateConnection = RunService.RenderStepped:Connect(function()
+            if forceCameraMode and lockedOn then
+                task.defer(forceCameraUpdate) -- Defer to run after other RenderStepped connections
+            end
+        end)
+        
+        table.insert(allConnections, forceUpdateConnection)
+    else
+        pcall(function()
+            RunService:UnbindFromRenderStep("LockOnForceCamera")
+        end)
+    end
+end
+
+local function updateCamera(dt)
+    -- Get camera reference
+    local cam = workspace.CurrentCamera
+    
+    -- Force camera mode: detect and handle camera changes
+    if forceCameraMode then
+        -- If camera is nil or destroyed, try to get it
+        if not cam or not cam.Parent then
+            cam = workspace.CurrentCamera
+            camera = cam
+        end
+        
+        if cam then
+            -- Don't change camera type in force mode - let game keep its type
+            -- We'll just override the CFrame directly
+            camera = cam
+        end
+    end
+    
+    if not cam then cam = workspace.CurrentCamera; camera = cam; return end
+    
+    if not lockedOn or not currentTarget then
+        invisibleTime, lastTargetPos = 0, nil
+        updateNPCHighlight()
+        if autoRelockPending and autoRelockEnabled then
+            local t, ty = findBestTargetCombined(nil)
+            if t then setNewTarget(t, ty) else refreshVisuals(); return end
+        else refreshVisuals(); return end
+    end
+
+    local myChar = localPlayer.Character
+    if not myChar then refreshVisuals(); return end
+    
+    local myHum = myChar:FindFirstChildOfClass("Humanoid")
+    local myRoot = getRootPart(myChar)
+    local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
+    local targetRoot = getRootPart(targetChar)
+    local targetHum = getHumanoid(targetChar)
+
+    if not (myHum and myRoot and targetRoot and targetHum) then
+        if autoSwapEnabled then 
+            local t, ty = findBestTargetCombined(currentTarget)
+            if t then setNewTarget(t, ty); return end 
+        end
+        unlockCamera(false); refreshVisuals(); return
+    end
+
+    if not isValidTarget(targetChar) then
+        if autoSwapEnabled then 
+            local t, ty = findBestTargetCombined(currentTarget)
+            if t then setNewTarget(t, ty); return end 
+        end
+        unlockCamera(false); refreshVisuals(); return
+    end
+
+    if visibilityCheckEnabled and currentTargetType == "player" and targeting then
+        local visible = pcall(function() return targeting:IsPlayerVisible(currentTarget) end)
+        if visible then invisibleTime = 0 else
+            invisibleTime = invisibleTime + dt
+            if invisibleTime >= 2.5 then
+                if autoSwapEnabled then 
+                    local t, ty = findBestTargetCombined(currentTarget)
+                    if t then setNewTarget(t, ty); return end 
+                end
+                unlockCamera(false); refreshVisuals(); return
+            end
+        end
+    end
+
+    if autoSwapEnabled and closeSwapEnabled then
+        local b, ty = findBestTargetCombined(nil)
+        if b and b ~= currentTarget then setNewTarget(b, ty) end
+    end
+
+    -- In force camera mode, we let the secondary hook handle the actual camera rotation
+    -- This function just handles targeting logic
+    if forceCameraMode then
+        lastTargetPos = targetRoot.Position
+        refreshVisuals()
+        return
+    end
+
+    -- Normal mode: try to use Custom camera type
+    pcall(function()
+        if cam.CameraSubject ~= myHum then cam.CameraSubject = myHum end
+        cam.CameraType = Enum.CameraType.Custom
+    end)
+
+    local camPos = cam.CFrame.Position
+    local lookPos = targetRoot.Position + Vector3.new(0, lockHeightOffset, 0)
+
+    if predictionEnabled and lastTargetPos then
+        local vel = (targetRoot.Position - lastTargetPos) / math.max(dt, 0.001)
+        lookPos = lookPos + vel * predictionStrength
+    end
+    lastTargetPos = targetRoot.Position
+
+    local desiredDir = lookPos - camPos
+    local dir = desiredDir.Magnitude > 0.5 and desiredDir.Unit or lastLookDir
+    lastLookDir = dir
+
+    if reverseLockEnabled and reverseLockHeld then
+        local baseDir = (lookPos - myRoot.Position)
+        if baseDir.Magnitude > 0.001 then
+            local horiz = Vector3.new(-baseDir.Unit.X, 0, -baseDir.Unit.Z)
+            if horiz.Magnitude > 0.001 then dir = (horiz.Unit + Vector3.new(0, baseDir.Unit.Y, 0)).Unit end
+        end
+    end
+
+    if perfectOffsetEnabled then
+        local horiz = Vector3.new(dir.X, 0, dir.Z)
+        if horiz.Magnitude > 0.001 then
+            local right = horiz.Unit:Cross(Vector3.new(0, 1, 0))
+            local off = (lookPos + right * PERFECT_OFFSET_STUDS) - camPos
+            if off.Magnitude > 0.5 then dir = off.Unit end
+        end
+    end
+
+    local targetCF = CFrame.new(camPos, camPos + dir)
+    cam.CFrame = exactMode and targetCF or cam.CFrame:Lerp(targetCF, smoothness)
+    refreshVisuals()
+end
+
+RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, updateCamera)
+
+--==================================================
+-- BUILD GUI
+--==================================================
+
+local function createButton(parent, yPos, text, tip)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 28)
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 12
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Text = text
+    btn.BorderSizePixel = 0
+    btn.BackgroundColor3 = currentTheme.secondary
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    connect(btn.MouseEnter, function()
+        if btn.Parent then
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = currentTheme.primary1}):Play()
+        end
+    end)
+    connect(btn.MouseLeave, function()
+        if btn.Parent then
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = currentTheme.secondary}):Play()
+        end
+    end)
+    
+    if tip then addTooltip(btn, tip) end
+    return btn
+end
+
+local function buildGui()
+    local saved = loadSettingsData()
+    if saved then applySettingsData(saved) end
+    
+    -- Setup force camera hooks if enabled from saved settings
+    setupForceCameraHooks()
+
+    gui = Instance.new("ScreenGui")
+    gui.Name = GUI_NAME
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.DisplayOrder = 999999
+    gui.IgnoreGuiInset = false
+    ScriptData.Gui = gui
+
+    if PARENT then
+        gui.Parent = PARENT
+    else
+        pcall(function() gui.Parent = CoreGui end)
+        if not gui.Parent then gui.Parent = localPlayer:WaitForChild("PlayerGui") end
+    end
+
+    setupTooltip(gui)
+
+    openBtn = Instance.new("TextButton")
+    openBtn.Size = UDim2.new(0, 36, 0, 36)
+    openBtn.Position = UDim2.new(0, 12, 1, -48)
+    openBtn.BackgroundColor3 = currentTheme.secondary
+    openBtn.TextColor3 = Color3.new(1, 1, 1)
+    openBtn.Font = Enum.Font.GothamBold
+    openBtn.TextSize = 20
+    openBtn.Text = "◎"
+    openBtn.BorderSizePixel = 0
+    openBtn.AutoButtonColor = false
+    openBtn.Parent = gui
+    Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 10)
+    local openStroke = Instance.new("UIStroke", openBtn)
+    openStroke.Thickness = 2
+    animatedElements[openStroke] = "stroke"
+
+    mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 320, 0, 420)
+    mainFrame.Position = UDim2.new(0, 12, 1, -440)
+    mainFrame.BackgroundColor3 = currentTheme.background
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Visible = false
+    mainFrame.Parent = gui
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+    local mainStroke = Instance.new("UIStroke", mainFrame)
+    mainStroke.Thickness = 2
+    animatedElements[mainStroke] = "stroke"
+
+    headerLabel = Instance.new("TextLabel")
+    headerLabel.Size = UDim2.new(1, -70, 0, 32)
+    headerLabel.Position = UDim2.new(0, 12, 0, 6)
+    headerLabel.BackgroundTransparency = 1
+    headerLabel.Font = Enum.Font.GothamBold
+    headerLabel.TextSize = 16
+    headerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    headerLabel.TextColor3 = currentTheme.text
+    headerLabel.Text = "🎯 Lock-On v3.2"
+    headerLabel.Parent = mainFrame
+    animatedElements[headerLabel] = "text"
+
+    closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -36, 0, 8)
+    closeBtn.BackgroundColor3 = currentTheme.secondary
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 16
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Text = "×"
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = mainFrame
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+
+    infoToggleButton = Instance.new("TextButton")
+    infoToggleButton.Size = UDim2.new(0, 28, 0, 28)
+    infoToggleButton.Position = UDim2.new(1, -68, 0, 8)
+    infoToggleButton.BackgroundColor3 = currentTheme.secondary
+    infoToggleButton.Font = Enum.Font.GothamBold
+    infoToggleButton.TextSize = 14
+    infoToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    infoToggleButton.Text = "?"
+    infoToggleButton.BorderSizePixel = 0
+    infoToggleButton.Parent = mainFrame
+    Instance.new("UICorner", infoToggleButton).CornerRadius = UDim.new(0, 8)
+    addTooltip(infoToggleButton, "Toggle tooltips")
+
+    extraSettingsButton = Instance.new("TextButton")
+    extraSettingsButton.Size = UDim2.new(0, 70, 0, 24)
+    extraSettingsButton.Position = UDim2.new(0, 10, 1, -32)
+    extraSettingsButton.BackgroundColor3 = currentTheme.secondary
+    extraSettingsButton.Font = Enum.Font.GothamMedium
+    extraSettingsButton.TextSize = 10
+    extraSettingsButton.TextColor3 = Color3.new(1, 1, 1)
+    extraSettingsButton.Text = "⚙ Extra"
+    extraSettingsButton.BorderSizePixel = 0
+    extraSettingsButton.Parent = mainFrame
+    Instance.new("UICorner", extraSettingsButton).CornerRadius = UDim.new(0, 6)
+
+    saveButton = Instance.new("TextButton")
+    saveButton.Size = UDim2.new(0, 70, 0, 24)
+    saveButton.Position = UDim2.new(0.5, -35, 1, -32)
+    saveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
+    saveButton.Font = Enum.Font.GothamMedium
+    saveButton.TextSize = 10
+    saveButton.TextColor3 = Color3.new(1, 1, 1)
+    saveButton.Text = "💾 Save"
+    saveButton.BorderSizePixel = 0
+    saveButton.Parent = mainFrame
+    Instance.new("UICorner", saveButton).CornerRadius = UDim.new(0, 6)
+
+    loadButton = Instance.new("TextButton")
+    loadButton.Size = UDim2.new(0, 70, 0, 24)
+    loadButton.Position = UDim2.new(1, -80, 1, -32)
+    loadButton.BackgroundColor3 = Color3.fromRGB(40, 40, 80)
+    loadButton.Font = Enum.Font.GothamMedium
+    loadButton.TextSize = 10
+    loadButton.TextColor3 = Color3.new(1, 1, 1)
+    loadButton.Text = "📂 Load"
+    loadButton.BorderSizePixel = 0
+    loadButton.Parent = mainFrame
+    Instance.new("UICorner", loadButton).CornerRadius = UDim.new(0, 6)
+
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1, -20, 0, 30)
+    tabBar.Position = UDim2.new(0, 10, 0, 42)
+    tabBar.BackgroundTransparency = 1
+    tabBar.Parent = mainFrame
+
+    local function createTab(txt, x)
+        local t = Instance.new("TextButton")
+        t.Size = UDim2.new(0.333, -4, 1, 0)
+        t.Position = UDim2.new(x, 0, 0, 0)
+        t.Font = Enum.Font.GothamMedium
+        t.TextSize = 11
+        t.TextColor3 = Color3.new(1, 1, 1)
+        t.Text = txt
+        t.BorderSizePixel = 0
+        t.BackgroundColor3 = currentTheme.secondary
+        t.Parent = tabBar
+        Instance.new("UICorner", t).CornerRadius = UDim.new(0, 6)
+        return t
+    end
+
+    tabMainButton = createTab("Main", 0)
+    tabVisualButton = createTab("Visual", 0.335)
+    tabTargetButton = createTab("Target", 0.67)
+
+    local pageSize = UDim2.new(1, -20, 1, -115)
+    local pagePos = UDim2.new(0, 10, 0, 76)
+
+    mainPage = Instance.new("ScrollingFrame")
+    mainPage.Size = pageSize
+    mainPage.Position = pagePos
+    mainPage.BackgroundTransparency = 1
+    mainPage.ScrollBarThickness = 4
+    mainPage.CanvasSize = UDim2.new(0, 0, 0, 295)
+    mainPage.Parent = mainFrame
+
+    visualPage = Instance.new("ScrollingFrame")
+    visualPage.Size = pageSize
+    visualPage.Position = pagePos
+    visualPage.BackgroundTransparency = 1
+    visualPage.ScrollBarThickness = 4
+    visualPage.CanvasSize = UDim2.new(0, 0, 0, 320)
+    visualPage.Visible = false
+    visualPage.Parent = mainFrame
+
+    targetPage = Instance.new("ScrollingFrame")
+    targetPage.Size = pageSize
+    targetPage.Position = pagePos
+    targetPage.BackgroundTransparency = 1
+    targetPage.ScrollBarThickness = 4
+    targetPage.CanvasSize = UDim2.new(0, 0, 0, 320)
+    targetPage.Visible = false
+    targetPage.Parent = mainFrame
+
+    -- MAIN PAGE
+    hardLockButton = createButton(mainPage, 0, "Hard lock: OFF", "Snap instantly")
+    autoswapButton = createButton(mainPage, 32, "Autoswap: OFF", "Auto-swap on death")
+    closeSwapButton = createButton(mainPage, 64, "CloseSwap: OFF", "Target closest")
+    checkVisibilityButton = createButton(mainPage, 96, "Visibility check: OFF", "Swap if hidden")
+    checkHealthButton = createButton(mainPage, 128, "Check health/FF: OFF", "Skip dead targets")
+    autoRelockButton = createButton(mainPage, 160, "Auto relock: OFF", "Re-lock auto")
+    realisticButton = createButton(mainPage, 192, "Realistic (front): OFF", "Front only")
+
+    heightLabel = Instance.new("TextLabel")
+    heightLabel.Size = UDim2.new(1, -10, 0, 20)
+    heightLabel.Position = UDim2.new(0, 0, 0, 228)
+    heightLabel.BackgroundTransparency = 1
+    heightLabel.Font = Enum.Font.GothamBold
+    heightLabel.TextSize = 11
+    heightLabel.TextColor3 = currentTheme.text
+    heightLabel.TextXAlignment = Enum.TextXAlignment.Left
+    heightLabel.Text = string.format("Height: %.1f", lockHeightOffset)
+    heightLabel.Parent = mainPage
+
+    heightSliderBar = Instance.new("Frame")
+    heightSliderBar.Size = UDim2.new(1, -10, 0, 18)
+    heightSliderBar.Position = UDim2.new(0, 0, 0, 248)
+    heightSliderBar.BackgroundColor3 = currentTheme.secondary
+    heightSliderBar.BorderSizePixel = 0
+    heightSliderBar.Parent = mainPage
+    Instance.new("UICorner", heightSliderBar).CornerRadius = UDim.new(0, 6)
+
+    heightSliderKnob = Instance.new("Frame")
+    heightSliderKnob.Size = UDim2.new(0, 16, 1, -4)
+    heightSliderKnob.Position = UDim2.new((lockHeightOffset - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN), 0, 0.5, 0)
+    heightSliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    heightSliderKnob.BackgroundColor3 = currentTheme.primary1
+    heightSliderKnob.BorderSizePixel = 0
+    heightSliderKnob.Parent = heightSliderBar
+    Instance.new("UICorner", heightSliderKnob).CornerRadius = UDim.new(0, 4)
+    animatedElements[heightSliderKnob] = "background"
+
+    local rangeLabel = Instance.new("TextLabel")
+    rangeLabel.Size = UDim2.new(0.5, 0, 0, 20)
+    rangeLabel.Position = UDim2.new(0, 0, 0, 270)
+    rangeLabel.BackgroundTransparency = 1
+    rangeLabel.Font = Enum.Font.GothamBold
+    rangeLabel.TextSize = 11
+    rangeLabel.TextColor3 = currentTheme.text
+    rangeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    rangeLabel.Text = "Range (0=∞):"
+    rangeLabel.Parent = mainPage
+
+    rangeInput = Instance.new("TextBox")
+    rangeInput.Size = UDim2.new(0.45, 0, 0, 22)
+    rangeInput.Position = UDim2.new(0.5, 4, 0, 268)
+    rangeInput.Font = Enum.Font.Gotham
+    rangeInput.TextSize = 12
+    rangeInput.TextColor3 = currentTheme.text
+    rangeInput.Text = tostring(rangeLimit)
+    rangeInput.BackgroundColor3 = currentTheme.secondary
+    rangeInput.BorderSizePixel = 0
+    rangeInput.ClearTextOnFocus = false
+    rangeInput.Parent = mainPage
+    Instance.new("UICorner", rangeInput).CornerRadius = UDim.new(0, 6)
+
+    -- VISUAL PAGE
+    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Glow target")
+    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Highlight #2")
+    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Fade self")
+
+    local themeLabel = Instance.new("TextLabel")
+    themeLabel.Size = UDim2.new(1, -10, 0, 20)
+    themeLabel.Position = UDim2.new(0, 0, 0, 100)
+    themeLabel.BackgroundTransparency = 1
+    themeLabel.Font = Enum.Font.GothamBold
+    themeLabel.TextSize = 12
+    themeLabel.TextColor3 = currentTheme.text
+    themeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    themeLabel.Text = "🎨 Themes:"
+    themeLabel.Parent = visualPage
+
+    local ti = 0
+    for name in pairs(THEMES) do
+        local row, col = math.floor(ti / 2), ti % 2
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0.48, 0, 0, 26)
+        b.Position = UDim2.new(col * 0.52, 0, 0, 124 + row * 30)
+        b.Font = Enum.Font.GothamMedium
+        b.TextSize = 11
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Text = name
+        b.BorderSizePixel = 0
+        b.BackgroundColor3 = currentTheme.secondary
+        b.Parent = visualPage
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        themeButtons[name] = b
+        connect(b.MouseButton1Click, function() setTheme(name) end)
+        ti += 1
+    end
+
+    local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
+    centerShiftlockButton = createButton(visualPage, afterThemes, "⊙ Center shift-lock", "Center camera")
+    visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 40)
+
+    -- TARGET PAGE
+    local keysLabel = Instance.new("TextLabel")
+    keysLabel.Size = UDim2.new(1, -10, 0, 20)
+    keysLabel.Position = UDim2.new(0, 0, 0, 0)
+    keysLabel.BackgroundTransparency = 1
+    keysLabel.Font = Enum.Font.GothamBold
+    keysLabel.TextSize = 11
+    keysLabel.TextColor3 = currentTheme.text
+    keysLabel.TextXAlignment = Enum.TextXAlignment.Left
+    keysLabel.Text = "⌨ Keybinds:"
+    keysLabel.Parent = targetPage
+
+    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Toggle lock")
+    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Next target")
+
+    hardLockKeyButton = Instance.new("TextButton")
+    hardLockKeyButton.Size = UDim2.new(0.68, 0, 0, 28)
+    hardLockKeyButton.Position = UDim2.new(0, 0, 0, 88)
+    hardLockKeyButton.Font = Enum.Font.GothamMedium
+    hardLockKeyButton.TextSize = 12
+    hardLockKeyButton.TextColor3 = Color3.new(1, 1, 1)
+    hardLockKeyButton.Text = "Hard-lock: V"
+    hardLockKeyButton.BorderSizePixel = 0
+    hardLockKeyButton.BackgroundColor3 = currentTheme.secondary
+    hardLockKeyButton.Parent = targetPage
+    Instance.new("UICorner", hardLockKeyButton).CornerRadius = UDim.new(0, 6)
+
+    hardLockKeyToggleButton = Instance.new("TextButton")
+    hardLockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
+    hardLockKeyToggleButton.Position = UDim2.new(0.7, 4, 0, 88)
+    hardLockKeyToggleButton.Font = Enum.Font.GothamMedium
+    hardLockKeyToggleButton.TextSize = 11
+    hardLockKeyToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    hardLockKeyToggleButton.Text = hardLockKeyEnabled and "On" or "Off"
+    hardLockKeyToggleButton.BorderSizePixel = 0
+    hardLockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
+    hardLockKeyToggleButton.Parent = targetPage
+    Instance.new("UICorner", hardLockKeyToggleButton).CornerRadius = UDim.new(0, 6)
+
+    mouseTargetButton = createButton(targetPage, 120, "Mouse target: OFF", "Cursor target")
+
+    local friendsLabel = Instance.new("TextLabel")
+    friendsLabel.Size = UDim2.new(1, -10, 0, 20)
+    friendsLabel.Position = UDim2.new(0, 0, 0, 156)
+    friendsLabel.BackgroundTransparency = 1
+    friendsLabel.Font = Enum.Font.GothamBold
+    friendsLabel.TextSize = 11
+    friendsLabel.TextColor3 = currentTheme.text
+    friendsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    friendsLabel.Text = "👥 Friendlies:"
+    friendsLabel.Parent = targetPage
+
+    friendsList = Instance.new("ScrollingFrame")
+    friendsList.Size = UDim2.new(1, -10, 0, 130)
+    friendsList.Position = UDim2.new(0, 0, 0, 178)
+    friendsList.BackgroundColor3 = currentTheme.secondary
+    friendsList.BorderSizePixel = 0
+    friendsList.ScrollBarThickness = 4
+    friendsList.Parent = targetPage
+    Instance.new("UICorner", friendsList).CornerRadius = UDim.new(0, 6)
+
+    -- EXTRA SETTINGS
+    extraSettingsFrame = Instance.new("Frame")
+    extraSettingsFrame.Size = UDim2.new(0, 260, 0, 245)
+    extraSettingsFrame.Position = UDim2.new(0, 340, 1, -290)
+    extraSettingsFrame.BackgroundColor3 = currentTheme.background
+    extraSettingsFrame.BorderSizePixel = 0
+    extraSettingsFrame.Visible = false
+    extraSettingsFrame.Parent = gui
+    Instance.new("UICorner", extraSettingsFrame).CornerRadius = UDim.new(0, 12)
+    local extraStroke = Instance.new("UIStroke", extraSettingsFrame)
+    extraStroke.Thickness = 2
+    animatedElements[extraStroke] = "stroke"
+
+    local extraHeader = Instance.new("TextLabel")
+    extraHeader.Size = UDim2.new(1, -50, 0, 26)
+    extraHeader.Position = UDim2.new(0, 12, 0, 8)
+    extraHeader.BackgroundTransparency = 1
+    extraHeader.Font = Enum.Font.GothamBold
+    extraHeader.TextSize = 14
+    extraHeader.TextXAlignment = Enum.TextXAlignment.Left
+    extraHeader.TextColor3 = currentTheme.text
+    extraHeader.Text = "⚙ Extra Settings"
+    extraHeader.Parent = extraSettingsFrame
+
+    extraSettingsCloseButton = Instance.new("TextButton")
+    extraSettingsCloseButton.Size = UDim2.new(0, 26, 0, 26)
+    extraSettingsCloseButton.Position = UDim2.new(1, -34, 0, 8)
+    extraSettingsCloseButton.BackgroundColor3 = currentTheme.secondary
+    extraSettingsCloseButton.Font = Enum.Font.GothamBold
+    extraSettingsCloseButton.TextSize = 14
+    extraSettingsCloseButton.TextColor3 = Color3.new(1, 1, 1)
+    extraSettingsCloseButton.Text = "×"
+    extraSettingsCloseButton.BorderSizePixel = 0
+    extraSettingsCloseButton.Parent = extraSettingsFrame
+    Instance.new("UICorner", extraSettingsCloseButton).CornerRadius = UDim.new(0, 6)
+
+    reverseLockButton = createButton(extraSettingsFrame, 40, "Reverse lock: OFF", "Face away")
+    reverseLockButton.Position = UDim2.new(0, 10, 0, 40); reverseLockButton.Size = UDim2.new(1, -20, 0, 28)
+
+    reverseKeyButton = createButton(extraSettingsFrame, 72, "Reverse: B", "Hold reverse")
+    reverseKeyButton.Position = UDim2.new(0, 10, 0, 72); reverseKeyButton.Size = UDim2.new(1, -20, 0, 28)
+
+    perfectOffsetButton = createButton(extraSettingsFrame, 104, "Perfect offset: OFF", "Aim offset")
+    perfectOffsetButton.Position = UDim2.new(0, 10, 0, 104); perfectOffsetButton.Size = UDim2.new(1, -20, 0, 28)
+
+    npcModeButton = createButton(extraSettingsFrame, 136, "NPC Mode: OFF", "Target NPCs")
+    npcModeButton.Position = UDim2.new(0, 10, 0, 136); npcModeButton.Size = UDim2.new(1, -20, 0, 28)
+
+    predictionButton = createButton(extraSettingsFrame, 168, "Prediction: OFF", "Aim ahead")
+    predictionButton.Position = UDim2.new(0, 10, 0, 168); predictionButton.Size = UDim2.new(1, -20, 0, 28)
+
+    forceCameraButton = createButton(extraSettingsFrame, 200, "Force Camera: OFF", "Override game camera")
+    forceCameraButton.Position = UDim2.new(0, 10, 0, 200); forceCameraButton.Size = UDim2.new(1, -20, 0, 28)
+
+    -- EVENTS
+    connect(openBtn.MouseButton1Click, function() mainFrame.Visible = true; openBtn.Visible = false end)
+    connect(closeBtn.MouseButton1Click, function() mainFrame.Visible = false; openBtn.Visible = true; extraSettingsFrame.Visible = false end)
+    connect(infoToggleButton.MouseButton1Click, function()
+        toggleTooltips()
+        if tooltipsEnabled then animatedElements[infoToggleButton] = "background"
+        else animatedElements[infoToggleButton] = nil; infoToggleButton.BackgroundColor3 = currentTheme.secondary end
+    end)
+    connect(extraSettingsButton.MouseButton1Click, function() extraSettingsFrame.Visible = not extraSettingsFrame.Visible end)
+    connect(extraSettingsCloseButton.MouseButton1Click, function() extraSettingsFrame.Visible = false end)
+
+    connect(saveButton.MouseButton1Click, function()
+        saveButton.Text = saveSettings() and "✓ Saved!" or "✗ Error"
+        task.delay(1.5, function() if saveButton and saveButton.Parent then saveButton.Text = "💾 Save" end end)
+    end)
+    
+    connect(loadButton.MouseButton1Click, function()
+        local data = loadSettingsData()
+        if data and applySettingsData(data) then
+            loadButton.Text = "✓ Loaded!"
+            refreshAllUI(); applyThemeToUI(); rebuildFriendsList(); syncTargetingOptions()
+        else loadButton.Text = "✗ None" end
+        task.delay(1.5, function() if loadButton and loadButton.Parent then loadButton.Text = "📂 Load" end end)
+    end)
+
+    local function setTab(n)
+        mainPage.Visible = n == "Main"
+        visualPage.Visible = n == "Visual"
+        targetPage.Visible = n == "Target"
+        for _, tab in ipairs({tabMainButton, tabVisualButton, tabTargetButton}) do
+            animatedElements[tab] = nil
+            if tab.Parent then tab.BackgroundColor3 = currentTheme.secondary end
+        end
+        local active = n == "Main" and tabMainButton or n == "Visual" and tabVisualButton or tabTargetButton
+        animatedElements[active] = "background"
+    end
+    
+    connect(tabMainButton.MouseButton1Click, function() setTab("Main") end)
+    connect(tabVisualButton.MouseButton1Click, function() setTab("Visual") end)
+    connect(tabTargetButton.MouseButton1Click, function() setTab("Target") end)
+
+    connect(hardLockButton.MouseButton1Click, function() exactMode = not exactMode; refreshAllUI() end)
+    connect(autoswapButton.MouseButton1Click, function() autoSwapEnabled = not autoSwapEnabled; refreshAllUI() end)
+    connect(closeSwapButton.MouseButton1Click, function() closeSwapEnabled = not closeSwapEnabled; refreshAllUI() end)
+    connect(checkVisibilityButton.MouseButton1Click, function() visibilityCheckEnabled = not visibilityCheckEnabled; syncTargetingOptions(); refreshAllUI() end)
+    connect(checkHealthButton.MouseButton1Click, function() checkHealthEnabled = not checkHealthEnabled; syncTargetingOptions(); refreshAllUI() end)
+    connect(autoRelockButton.MouseButton1Click, function() autoRelockEnabled = not autoRelockEnabled; refreshAllUI() end)
+    connect(realisticButton.MouseButton1Click, function() realisticEnabled = not realisticEnabled; syncTargetingOptions(); refreshAllUI() end)
+
+    connect(highlightButton.MouseButton1Click, function() if visuals then pcall(function() visuals:SetHighlightEnabled(not visuals:IsHighlightEnabled()) end); updateNPCHighlight() end; refreshAllUI() end)
+    connect(highlightSecondButton.MouseButton1Click, function() if visuals then pcall(function() visuals:SetHighlightSecondEnabled(not visuals:IsHighlightSecondEnabled()) end) end; refreshAllUI() end)
+    connect(selfFadeButton.MouseButton1Click, function() if visuals then pcall(function() visuals:SetSelfFadeEnabled(not visuals:IsSelfFadeEnabled()) end) end; refreshAllUI() end)
+    connect(centerShiftlockButton.MouseButton1Click, function() if shiftLock then pcall(function() shiftLock:EnableCenterSystem() end) end end)
+
+    connect(mouseTargetButton.MouseButton1Click, function() mouseTargetMode = not mouseTargetMode; refreshAllUI() end)
+    connect(hardLockKeyToggleButton.MouseButton1Click, function() hardLockKeyEnabled = not hardLockKeyEnabled; refreshAllUI() end)
+
+    connect(lockOnKeyButton.MouseButton1Click, function() waitingForKeybind = "LockOn"; lockOnKeyButton.Text = "..." end)
+    connect(swapKeyButton.MouseButton1Click, function() waitingForKeybind = "SwapTarget"; swapKeyButton.Text = "..." end)
+    connect(hardLockKeyButton.MouseButton1Click, function() waitingForKeybind = "HardLock"; hardLockKeyButton.Text = "..." end)
+    connect(reverseKeyButton.MouseButton1Click, function() waitingForKeybind = "ReverseLock"; reverseKeyButton.Text = "..." end)
+
+    connect(reverseLockButton.MouseButton1Click, function() reverseLockEnabled = not reverseLockEnabled; refreshAllUI() end)
+    connect(perfectOffsetButton.MouseButton1Click, function() perfectOffsetEnabled = not perfectOffsetEnabled; refreshAllUI() end)
+    connect(npcModeButton.MouseButton1Click, function() npcModeEnabled = not npcModeEnabled; refreshAllUI() end)
+    connect(predictionButton.MouseButton1Click, function() predictionEnabled = not predictionEnabled; refreshAllUI() end)
+    connect(forceCameraButton.MouseButton1Click, function() 
+        forceCameraMode = not forceCameraMode
+        setupForceCameraHooks()
+        refreshAllUI() 
+    end)
+
+    connect(rangeInput.FocusLost, function() rangeLimit = math.max(0, tonumber(rangeInput.Text) or 0); rangeInput.Text = tostring(rangeLimit); syncTargetingOptions() end)
+
+    local dragging = false
+    connect(heightSliderBar.InputBegan, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    connect(heightSliderBar.InputEnded, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    connect(UserInputService.InputChanged, function(i)
+        if dragging and heightSliderBar.Parent and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local a = math.clamp((UserInputService:GetMouseLocation().X - heightSliderBar.AbsolutePosition.X) / heightSliderBar.AbsoluteSize.X, 0, 1)
+            if heightSliderKnob.Parent then heightSliderKnob.Position = UDim2.new(a, 0, 0.5, 0) end
+            lockHeightOffset = SLIDER_MIN + (SLIDER_MAX - SLIDER_MIN) * a
+            if heightLabel and heightLabel.Parent then heightLabel.Text = string.format("Height: %.1f", lockHeightOffset) end
+        end
+    end)
+
+    setTab("Main")
+    refreshAllUI()
+    applyThemeToUI()
+    rebuildFriendsList()
+    syncTargetingOptions()
+
+    local indicator = Instance.new("TextLabel")
+    indicator.Size = UDim2.new(0, 160, 0, 28)
+    indicator.Position = UDim2.new(0.5, -80, 0, 10)
+    indicator.BackgroundColor3 = currentTheme.background
+    indicator.BackgroundTransparency = 0.1
+    indicator.TextColor3 = Color3.new(1, 1, 1)
+    indicator.Font = Enum.Font.GothamBold
+    indicator.TextSize = 13
+    indicator.Visible = false
+    indicator.Parent = gui
+    Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 10)
+    local indicatorStroke = Instance.new("UIStroke", indicator)
+    indicatorStroke.Thickness = 2
+    animatedElements[indicatorStroke] = "stroke"
+
+    connect(RunService.Heartbeat, function()
+        if indicator.Parent then
+            if lockedOn and currentTarget then
+                indicator.Visible = true
+                indicator.Text = (currentTargetType == "npc" and "👾 " or "🎯 ") .. tostring(currentTarget.Name or "Unknown")
+            else
+                indicator.Visible = false
+            end
+        end
+    end)
+end
+
+buildGui()
+
+--==================================================
+-- INPUT HANDLING
+--==================================================
+
+connect(UserInputService.InputBegan, function(input, gpe)
+    if waitingForKeybind and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
+        keybinds[waitingForKeybind] = input.KeyCode
+        waitingForKeybind = nil
+        refreshAllUI()
+        return
+    end
+    if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    local kc = input.KeyCode
+    if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
+    if kc == Enum.KeyCode.LeftShift and shiftLock then pcall(function() shiftLock:Toggle() end) end
+    if gpe then return end
+    if kc == keybinds.LockOn then
+        if lockedOn then 
+            if camera then lastLookDir = camera.CFrame.LookVector end
+            unlockCamera(true)
+        else 
+            -- Use mouse target mode if enabled, otherwise use closest target
+            local t, ty
+            if mouseTargetMode then
+                t, ty = findMouseTarget()
+            else
+                t, ty = findBestTargetCombined(nil)
+            end
+            if t then setNewTarget(t, ty) end 
+        end
+    end
+    if kc == keybinds.SwapTarget and lockedOn and currentTarget then 
+        -- Swap also uses mouse target mode if enabled
+        local t, ty
+        if mouseTargetMode then
+            t, ty = findMouseTarget()
+            -- If mouse target is same as current, find next closest
+            if t == currentTarget then
+                t, ty = findBestTargetCombined(currentTarget)
+            end
+        else
+            t, ty = findBestTargetCombined(currentTarget)
+        end
+        if t then setNewTarget(t, ty) end 
+    end
+    if kc == keybinds.HardLock and hardLockKeyEnabled then exactMode = not exactMode; refreshAllUI() end
+end)
+
+connect(UserInputService.InputEnded, function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == keybinds.ReverseLock then reverseLockHeld = false end
+end)
+
+--==================================================
+-- CHARACTER RESPAWN
+--==================================================
+
+local function onCharacterAdded(char)
+    pcall(function()
+        char:WaitForChild("Humanoid", 10)
+        char:WaitForChild("HumanoidRootPart", 10)
+    end)
+    
+    -- Reset lock state
+    if lockedOn then 
+        lockedOn, currentTarget, currentTargetType = false, nil, "player" 
+    end
+    
+    -- Update camera reference
+    camera = workspace.CurrentCamera
+    
+    -- Store current visual settings before destroying
+    local savedHighlight = false
+    local savedHighlight2 = false
+    local savedSelfFade = false
+    
+    if visuals then
+        pcall(function()
+            savedHighlight = visuals:IsHighlightEnabled()
+            savedHighlight2 = visuals:IsHighlightSecondEnabled()
+            savedSelfFade = visuals:IsSelfFadeEnabled()
+        end)
+        pcall(function() visuals:Destroy() end)
+    end
+    
+    -- Small delay to ensure character is fully loaded
+    task.delay(0.5, function()
+        -- Recreate visuals module
+        if VisualModule then
+            visuals = VisualModule.new(localPlayer)
+            
+            -- Restore saved settings
+            if visuals then
+                pcall(function()
+                    visuals:SetHighlightEnabled(savedHighlight)
+                    visuals:SetHighlightSecondEnabled(savedHighlight2)
+                    visuals:SetSelfFadeEnabled(savedSelfFade)
+                end)
+            end
+        end
+        
+        -- Update NPC highlight if needed
+        updateNPCHighlight()
+        
+        -- Refresh UI to show correct states
+        refreshAllUI()
+    end)
+end
+
+if localPlayer.Character then task.spawn(function() onCharacterAdded(localPlayer.Character) end) end
+connect(localPlayer.CharacterAdded, onCharacterAdded)
+
+connect(localPlayer.OnTeleport, function(state)
+    tpDebug("OnTeleport fired - State: " .. tostring(state))
+    
+    if state == Enum.TeleportState.Started then 
+        tpDebug("TeleportState.Started detected!")
+        
+        -- Save settings before teleport
+        pcall(saveSettings)
+        tpDebug("Settings saved")
+        
+        -- METHOD 2: Queue script when teleport starts (Synapse X style)
+        -- Some executors need this instead of/in addition to startup queue
+        if queueteleport and SCRIPT_URL then
+            local success, err = pcall(function()
+                queueteleport([[
+                    repeat task.wait() until game:IsLoaded()
+                    task.wait(2)
+                    local success, err = pcall(function()
+                        loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
+                    end)
+                    if not success then
+                        warn("[LockOn] Re-execute failed: " .. tostring(err))
+                    end
+                ]])
+            end)
+            
+            if success then
+                tpDebug("METHOD 2: Queued in OnTeleport - SUCCESS")
+            else
+                tpDebug("METHOD 2: Queued in OnTeleport - FAILED: " .. tostring(err))
+            end
+        else
+            if not queueteleport then
+                tpDebug("METHOD 2: Skipped - no queue_on_teleport function")
+            elseif not SCRIPT_URL then
+                tpDebug("METHOD 2: Skipped - no SCRIPT_URL set")
+            end
+        end
+    end
+end)
+
+print("✅ Lock-On Camera v3.2 loaded!")
+print("🎨 8 animated themes | 👾 NPC mode | 🔮 Prediction")
+print("⌨ X:lock C:swap V:hardlock B:reverse")
+print("💬 /e stop to unload")
+if queueteleport then
+    if SCRIPT_URL then
+        print("🔄 Teleport persistence: ENABLED (both methods)")
+        print("📝 Debug mode: " .. (TELEPORT_DEBUG and "ON" or "OFF"))
+    else
+        print("⚠ Teleport persistence: Set SCRIPT_URL at top of script to enable")
+    end
+else
+    print("⚠ Teleport persistence: Not supported by your executor (queue_on_teleport missing)")
+end
