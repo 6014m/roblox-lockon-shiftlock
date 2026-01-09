@@ -2220,16 +2220,20 @@ connect(UserInputService.InputBegan, function(input, gpe)
         return
     end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+    
+    -- Check if user is typing in a text box
+    local isTyping = UserInputService:GetFocusedTextBox() ~= nil
+    
     local kc = input.KeyCode
     
     -- Custom shiftlock toggle with configurable key (only if keybind is enabled)
     -- Shiftlock works even when typing (like Roblox's built-in)
-    if kc == keybinds.ShiftLock and shiftlockKeyEnabled and not gpe then 
+    if kc == keybinds.ShiftLock and shiftlockKeyEnabled and not gpe and not isTyping then 
         toggleCustomShiftlock()
         refreshAllUI()
     end
     
-    if gpe then return end
+    if gpe or isTyping then return end
     
     -- These only work when NOT typing
     if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
