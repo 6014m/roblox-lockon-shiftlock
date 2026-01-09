@@ -182,12 +182,9 @@ function ShiftLock:_doShiftLockFrame()
     -- Keep game's shiftlock disabled
     pcall(function() self.player.DevEnableMouseLock = false end)
 
-    -- Rotate character to face camera direction
-    local look = cam.CFrame.LookVector
-    local flatLook = Vector3.new(look.X, 0, look.Z)
-    if flatLook.Magnitude > 0 then
-        root.CFrame = CFrame.lookAt(root.Position, root.Position + flatLook)
-    end
+    -- Rotate character to face camera direction (Y axis only - don't affect up/down look)
+    local _, y = cam.CFrame:ToEulerAnglesYXZ()
+    root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, y, 0)
 end
 
 function ShiftLock:_bindLoop()
