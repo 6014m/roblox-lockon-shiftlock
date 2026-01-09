@@ -1,5 +1,5 @@
--- ShiftLockModule - Bulletproof Custom Shiftlock
--- Forces CENTERED shiftlock by taking complete control every frame
+-- ShiftLockModule - Bulletproof CENTERED Shiftlock
+-- Forces camera to stay CENTERED (no side offset)
 -- Overrides ANY other shiftlock (default or custom game scripts)
 
 local Players = game:GetService("Players")
@@ -23,6 +23,7 @@ function ShiftLock.new(localPlayer)
     self.vIcon = nil
     self.bindName = "CustomShiftLock_" .. localPlayer.UserId
     self.bindName2 = "CustomShiftLockPost_" .. localPlayer.UserId
+    self.renderConn = nil
 
     self.charConn = nil
     self.humConn = nil
@@ -31,7 +32,6 @@ function ShiftLock.new(localPlayer)
     self:_updateCharacterRefs(char)
     self.charConn = localPlayer.CharacterAdded:Connect(function(c)
         self:_updateCharacterRefs(c)
-        -- Re-apply lock if was locked before respawn
         if self.shiftLocked then
             task.delay(0.5, function()
                 self:_applyLock()
@@ -45,7 +45,6 @@ function ShiftLock.new(localPlayer)
     return self
 end
 
--- internal: build the V icon GUI
 function ShiftLock:_buildGui()
     local playerGui = self.player:WaitForChild("PlayerGui")
 
@@ -73,7 +72,6 @@ function ShiftLock:_buildGui()
     self.vIcon = vIcon
 end
 
--- internal: refresh humanoid / root references
 function ShiftLock:_updateCharacterRefs(char)
     self.character = char
     self.humanoid = char:WaitForChild("Humanoid")
@@ -91,21 +89,27 @@ function ShiftLock:_updateCharacterRefs(char)
     end)
 end
 
--- The actual shiftlock logic - called from multiple places to ensure override
 function ShiftLock:_doShiftLockFrame()
-    if not self.enabled or not self.shiftLocked then
-        return
-    end
-
     local char = self.player.Character
     if not char then return end
     
     local hum = char:FindFirstChildOfClass("Humanoid")
     local root = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
     
-    if not hum or not root then return end
+    if not hum then return end
 
-    -- Skip during certain states
+    -- ALWAYS force CameraOffset to 0 when enabled (even if not locked yet)
+    -- This prevents the camera from shifting
+    if self.enabled then
+        pcall(function()
+            hum.CameraOffset = Vector3.new(0, 0, 0)
+        end)
+    end
+
+    if not self.shiftLocked or not root then
+        return
+    end
+
     if hum.Health <= 0 then return end
     
     local state = hum:GetState()
@@ -119,25 +123,10 @@ function ShiftLock:_doShiftLockFrame()
     local cam = workspace.CurrentCamera
     if not cam then return end
 
-    -- FORCE mouse to center EVERY frame
-    pcall(function()
-        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-    end)
-    
-    -- FORCE auto-rotate off every frame
-    pcall(function()
-        hum.AutoRotate = false
-    end)
-    
-    -- FORCE camera offset to 0 (CENTERED, not over-shoulder)
-    pcall(function()
-        hum.CameraOffset = Vector3.new(0, 0, 0)
-    end)
-    
-    -- FORCE mouse icon hidden
-    pcall(function()
-        UserInputService.MouseIconEnabled = false
-    end)
+    -- FORCE everything every frame
+    pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
+    pcall(function() hum.AutoRotate = false end)
+    pcall(function() UserInputService.MouseIconEnabled = false end)
 
     -- Rotate character to face camera direction
     local look = cam.CFrame.LookVector
@@ -147,24 +136,24 @@ function ShiftLock:_doShiftLockFrame()
     end
 end
 
--- internal: main loop - TRIPLE BIND for maximum override
 function ShiftLock:_bindLoop()
     pcall(function() RunService:UnbindFromRenderStep(self.bindName) end)
     pcall(function() RunService:UnbindFromRenderStep(self.bindName2) end)
+    if self.renderConn then pcall(function() self.renderConn:Disconnect() end) end
     
-    -- FIRST PASS: Run BEFORE camera scripts (high priority number = runs later, but we want early too)
+    -- Run BEFORE game camera scripts
     RunService:BindToRenderStep(self.bindName, Enum.RenderPriority.Camera.Value - 1, function()
         self:_doShiftLockFrame()
     end)
     
-    -- SECOND PASS: Run AFTER camera scripts to override whatever they did
+    -- Run AFTER game camera scripts
     RunService:BindToRenderStep(self.bindName2, Enum.RenderPriority.Camera.Value + 100, function()
         self:_doShiftLockFrame()
     end)
     
-    -- THIRD PASS: Also use RenderStepped with task.defer for one more override after everything
+    -- Also run with task.defer after everything
     self.renderConn = RunService.RenderStepped:Connect(function()
-        if self.enabled and self.shiftLocked then
+        if self.enabled then
             task.defer(function()
                 self:_doShiftLockFrame()
             end)
@@ -172,13 +161,13 @@ function ShiftLock:_bindLoop()
     end)
 end
 
--- internal: apply lock visuals / mouse
 function ShiftLock:_applyLock()
     self.shiftLocked = true
 
-    if self.humanoid then
-        self.humanoid.AutoRotate = false
-        self.humanoid.CameraOffset = Vector3.new(0, 0, 0)
+    local hum = self.humanoid
+    if hum then
+        hum.AutoRotate = false
+        hum.CameraOffset = Vector3.new(0, 0, 0)
     end
 
     if self.vIcon then
@@ -189,12 +178,14 @@ function ShiftLock:_applyLock()
     UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 end
 
--- public: fully unlock mouse, hide icon
 function ShiftLock:ForceOff()
     self.shiftLocked = false
 
-    if self.humanoid then
-        pcall(function() self.humanoid.AutoRotate = true end)
+    local char = self.player.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    
+    if hum then
+        pcall(function() hum.AutoRotate = true end)
     end
 
     if self.vIcon then
@@ -205,19 +196,12 @@ function ShiftLock:ForceOff()
     pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.Default end)
 end
 
--- public: called once when you press "Center shift-lock" button
 function ShiftLock:EnableCenterSystem()
     if self.enabled then return end
-
     self.enabled = true
-
-    -- kill default Dev shiftlock
-    pcall(function()
-        self.player.DevEnableMouseLock = false
-    end)
+    pcall(function() self.player.DevEnableMouseLock = false end)
 end
 
--- public: enable shiftlock directly (for auto-enable feature)
 function ShiftLock:Enable()
     self:EnableCenterSystem()
     if not self.shiftLocked then
@@ -225,17 +209,14 @@ function ShiftLock:Enable()
     end
 end
 
--- public: disable shiftlock directly
 function ShiftLock:Disable()
     self:ForceOff()
 end
 
--- public: check if currently locked
 function ShiftLock:IsEnabled()
     return self.shiftLocked
 end
 
--- public: toggle on key press
 function ShiftLock:Toggle()
     if not self.enabled then
         self:EnableCenterSystem()
@@ -248,9 +229,9 @@ function ShiftLock:Toggle()
     end
 end
 
--- public: clean up everything
 function ShiftLock:Destroy()
     self:ForceOff()
+    self.enabled = false
 
     pcall(function() RunService:UnbindFromRenderStep(self.bindName) end)
     pcall(function() RunService:UnbindFromRenderStep(self.bindName2) end)
