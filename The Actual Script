@@ -456,7 +456,7 @@ end)
 --==================================================
 
 local lockedOn, currentTarget, currentTargetType = false, nil, "player"
-local exactMode, autoSwapEnabled, closeSwapEnabled = false, false, false
+local autoSwapEnabled, closeSwapEnabled = false, false
 local visibilityCheckEnabled, checkHealthEnabled = false, false
 local autoRelockEnabled, realisticEnabled = false, false
 local autoRelockPending, rangeLimit, invisibleTime = false, 0, 0
@@ -467,12 +467,11 @@ local smoothness = 0.25
 local keybinds = {
     LockOn = Enum.KeyCode.X,
     SwapTarget = Enum.KeyCode.C,
-    HardLock = Enum.KeyCode.V,
     ReverseLock = Enum.KeyCode.B,
     ShiftLock = Enum.KeyCode.LeftShift,
 }
 
-local hardLockKeyEnabled, waitingForKeybind = true, nil
+local waitingForKeybind = nil
 local SLIDER_MIN, SLIDER_MAX, lockHeightOffset = -5, 5, 0
 local lastLookDir = Vector3.new(0, 0, -1)
 local reverseLockEnabled, reverseLockHeld = false, false
@@ -494,10 +493,10 @@ local mouseResistanceScale = 0.5 -- -1 to 1: negative = more freedom, positive =
 local gui, mainFrame, openBtn, closeBtn, infoToggleButton, headerLabel
 local tabMainButton, tabVisualButton, tabTargetButton
 local mainPage, visualPage, targetPage
-local hardLockButton, highlightButton, highlightSecondButton, selfFadeButton
+local highlightButton, highlightSecondButton, selfFadeButton
 local autoswapButton, closeSwapButton, checkVisibilityButton, checkHealthButton
 local autoRelockButton, realisticButton, centerShiftlockButton
-local lockOnKeyButton, swapKeyButton, hardLockKeyButton, hardLockKeyToggleButton
+local lockOnKeyButton, swapKeyButton
 local mouseTargetButton, friendsList
 local heightLabel, heightSliderBar, heightSliderKnob, rangeInput
 local extraSettingsFrame, extraSettingsButton, extraSettingsCloseButton
@@ -518,7 +517,7 @@ local function saveSettings()
     local success = pcall(function()
         local data = {
             theme = currentThemeName,
-            exactMode = exactMode,
+            autoSwapEnabled = autoSwapEnabled,
             autoSwapEnabled = autoSwapEnabled,
             closeSwapEnabled = closeSwapEnabled,
             visibilityCheckEnabled = visibilityCheckEnabled,
@@ -533,7 +532,6 @@ local function saveSettings()
             reverseLockEnabled = reverseLockEnabled,
             perfectOffsetEnabled = perfectOffsetEnabled,
             mouseTargetMode = mouseTargetMode,
-            hardLockKeyEnabled = hardLockKeyEnabled,
             npcModeEnabled = npcModeEnabled,
             predictionEnabled = predictionEnabled,
             forceCameraMode = forceCameraMode,
@@ -544,7 +542,6 @@ local function saveSettings()
             mouseResistanceScale = mouseResistanceScale,
             kb_LockOn = keybinds.LockOn.Name,
             kb_SwapTarget = keybinds.SwapTarget.Name,
-            kb_HardLock = keybinds.HardLock.Name,
             kb_ReverseLock = keybinds.ReverseLock.Name,
             kb_ShiftLock = keybinds.ShiftLock.Name,
         }
@@ -576,7 +573,7 @@ local function applySettingsData(data)
         currentTheme = THEMES[data.theme]
     end
     
-    exactMode = (data.exactMode == true)
+    autoSwapEnabled = (data.autoSwapEnabled == true)
     autoSwapEnabled = (data.autoSwapEnabled == true)
     closeSwapEnabled = (data.closeSwapEnabled == true)
     visibilityCheckEnabled = (data.visibilityCheckEnabled == true)
@@ -593,7 +590,6 @@ local function applySettingsData(data)
     shiftlockAutoEnable = (data.shiftlockAutoEnable == true)
     shiftlockKeyEnabled = (data.shiftlockKeyEnabled ~= false)
     mouseResistanceEnabled = (data.mouseResistanceEnabled == true)
-    hardLockKeyEnabled = (data.hardLockKeyEnabled ~= false)
     
     rangeLimit = tonumber(data.rangeLimit) or 0
     lockHeightOffset = tonumber(data.lockHeightOffset) or 0
@@ -602,14 +598,12 @@ local function applySettingsData(data)
     -- New keybind format
     if data.kb_LockOn and Enum.KeyCode[data.kb_LockOn] then keybinds.LockOn = Enum.KeyCode[data.kb_LockOn] end
     if data.kb_SwapTarget and Enum.KeyCode[data.kb_SwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.kb_SwapTarget] end
-    if data.kb_HardLock and Enum.KeyCode[data.kb_HardLock] then keybinds.HardLock = Enum.KeyCode[data.kb_HardLock] end
     if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
     if data.kb_ShiftLock and Enum.KeyCode[data.kb_ShiftLock] then keybinds.ShiftLock = Enum.KeyCode[data.kb_ShiftLock] end
     
     -- Old formats
     if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
     if data.keybindSwapTarget and Enum.KeyCode[data.keybindSwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.keybindSwapTarget] end
-    if data.keybindHardLock and Enum.KeyCode[data.keybindHardLock] then keybinds.HardLock = Enum.KeyCode[data.keybindHardLock] end
     if data.keybindReverseLock and Enum.KeyCode[data.keybindReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.keybindReverseLock] end
     if data.keybinds then
         for k, v in pairs(data.keybinds) do
@@ -755,7 +749,7 @@ local function keyCodeToText(kc) return typeof(kc) == "EnumItem" and kc.Name or 
 
 local function refreshAllUI()
     pcall(function()
-        if hardLockButton then hardLockButton.Text = "Hard lock: " .. (exactMode and "ON" or "OFF") end
+
         if highlightButton then highlightButton.Text = "Highlight: " .. (visuals and visuals:IsHighlightEnabled() and "ON" or "OFF") end
         if highlightSecondButton then highlightSecondButton.Text = "2nd closest: " .. (visuals and visuals:IsHighlightSecondEnabled() and "ON" or "OFF") end
         if selfFadeButton then selfFadeButton.Text = "Self fade: " .. (visuals and visuals:IsSelfFadeEnabled() and "ON" or "OFF") end
@@ -782,8 +776,6 @@ local function refreshAllUI()
         if shiftlockAutoEnableButton then shiftlockAutoEnableButton.Text = "Auto-Enable: " .. (shiftlockAutoEnable and "ON" or "OFF") end
         if lockOnKeyButton then lockOnKeyButton.Text = "Lock-on: " .. keyCodeToText(keybinds.LockOn) end
         if swapKeyButton then swapKeyButton.Text = "Swap: " .. keyCodeToText(keybinds.SwapTarget) end
-        if hardLockKeyButton then hardLockKeyButton.Text = "Hard-lock: " .. keyCodeToText(keybinds.HardLock) end
-        if hardLockKeyToggleButton then hardLockKeyToggleButton.Text = hardLockKeyEnabled and "On" or "Off" end
         if reverseKeyButton then reverseKeyButton.Text = "Reverse: " .. keyCodeToText(keybinds.ReverseLock) end
         if heightLabel then heightLabel.Text = string.format("Height: %.1f", lockHeightOffset) end
         if heightSliderKnob and heightSliderKnob.Parent then 
@@ -803,10 +795,10 @@ local function applyThemeToUI()
         
         local btns = {
             closeBtn, infoToggleButton, tabMainButton, tabVisualButton, tabTargetButton,
-            hardLockButton, highlightButton, highlightSecondButton, selfFadeButton,
+            highlightButton, highlightSecondButton, selfFadeButton,
             autoswapButton, closeSwapButton, checkVisibilityButton, checkHealthButton,
             autoRelockButton, realisticButton, centerShiftlockButton,
-            lockOnKeyButton, swapKeyButton, hardLockKeyButton, hardLockKeyToggleButton,
+            lockOnKeyButton, swapKeyButton,
             mouseTargetButton, extraSettingsButton, extraSettingsCloseButton,
             reverseLockButton, reverseKeyButton, perfectOffsetButton,
             npcModeButton, predictionButton, forceCameraButton, mouseResistanceButton, 
@@ -1185,17 +1177,7 @@ local function forceCameraUpdate()
     
     -- ONLY change rotation, keep the game's camera position intact
     local targetCF = CFrame.new(camPos, camPos + dir)
-    
-    if exactMode then
-        cam.CFrame = targetCF
-    else
-        -- Smoothly rotate while keeping position
-        local currentLook = cam.CFrame.LookVector
-        local newLook = currentLook:Lerp(dir, 0.5)
-        if newLook.Magnitude > 0.001 then
-            cam.CFrame = CFrame.new(camPos, camPos + newLook)
-        end
-    end
+    cam.CFrame = targetCF
 end
 
 -- Setup/teardown force camera hooks
@@ -1367,7 +1349,7 @@ local function updateCamera(dt)
     end
 
     local targetCF = CFrame.new(camPos, camPos + dir)
-    cam.CFrame = exactMode and targetCF or cam.CFrame:Lerp(targetCF, smoothness)
+    cam.CFrame = targetCF
     refreshVisuals()
 end
 
@@ -1586,17 +1568,16 @@ local function buildGui()
     targetPage.Parent = mainFrame
 
     -- MAIN PAGE
-    hardLockButton = createButton(mainPage, 0, "Hard lock: OFF", "Snap instantly")
-    autoswapButton = createButton(mainPage, 32, "Autoswap: OFF", "Auto-swap on death")
-    closeSwapButton = createButton(mainPage, 64, "CloseSwap: OFF", "Target closest")
-    checkVisibilityButton = createButton(mainPage, 96, "Visibility check: OFF", "Swap if hidden")
-    checkHealthButton = createButton(mainPage, 128, "Check health/FF: OFF", "Skip dead targets")
-    autoRelockButton = createButton(mainPage, 160, "Auto relock: OFF", "Re-lock auto")
-    realisticButton = createButton(mainPage, 192, "Realistic (front): OFF", "Front only")
+    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Auto-swap on death")
+    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "Target closest")
+    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Swap if hidden")
+    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skip dead targets")
+    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "Re-lock auto")
+    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Front only")
 
     heightLabel = Instance.new("TextLabel")
     heightLabel.Size = UDim2.new(1, -10, 0, 20)
-    heightLabel.Position = UDim2.new(0, 0, 0, 228)
+    heightLabel.Position = UDim2.new(0, 0, 0, 196)
     heightLabel.BackgroundTransparency = 1
     heightLabel.Font = Enum.Font.GothamBold
     heightLabel.TextSize = 11
@@ -1607,7 +1588,7 @@ local function buildGui()
 
     heightSliderBar = Instance.new("Frame")
     heightSliderBar.Size = UDim2.new(1, -10, 0, 18)
-    heightSliderBar.Position = UDim2.new(0, 0, 0, 248)
+    heightSliderBar.Position = UDim2.new(0, 0, 0, 216)
     heightSliderBar.BackgroundColor3 = currentTheme.secondary
     heightSliderBar.BorderSizePixel = 0
     heightSliderBar.Parent = mainPage
@@ -1685,7 +1666,7 @@ local function buildGui()
     local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
     centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Override all shiftlocks")
     
-    -- Shiftlock key with On/Off toggle (like hardlock key)
+    -- Shiftlock key with On/Off toggle
     shiftlockKeyButton = Instance.new("TextButton")
     shiftlockKeyButton.Size = UDim2.new(0.68, 0, 0, 28)
     shiftlockKeyButton.Position = UDim2.new(0, 0, 0, afterThemes + 32)
@@ -1731,35 +1712,11 @@ local function buildGui()
     lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Toggle lock")
     swapKeyButton = createButton(targetPage, 56, "Swap: C", "Next target")
 
-    hardLockKeyButton = Instance.new("TextButton")
-    hardLockKeyButton.Size = UDim2.new(0.68, 0, 0, 28)
-    hardLockKeyButton.Position = UDim2.new(0, 0, 0, 88)
-    hardLockKeyButton.Font = Enum.Font.GothamMedium
-    hardLockKeyButton.TextSize = 12
-    hardLockKeyButton.TextColor3 = Color3.new(1, 1, 1)
-    hardLockKeyButton.Text = "Hard-lock: V"
-    hardLockKeyButton.BorderSizePixel = 0
-    hardLockKeyButton.BackgroundColor3 = currentTheme.secondary
-    hardLockKeyButton.Parent = targetPage
-    Instance.new("UICorner", hardLockKeyButton).CornerRadius = UDim.new(0, 6)
-
-    hardLockKeyToggleButton = Instance.new("TextButton")
-    hardLockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
-    hardLockKeyToggleButton.Position = UDim2.new(0.7, 4, 0, 88)
-    hardLockKeyToggleButton.Font = Enum.Font.GothamMedium
-    hardLockKeyToggleButton.TextSize = 11
-    hardLockKeyToggleButton.TextColor3 = Color3.new(1, 1, 1)
-    hardLockKeyToggleButton.Text = hardLockKeyEnabled and "On" or "Off"
-    hardLockKeyToggleButton.BorderSizePixel = 0
-    hardLockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
-    hardLockKeyToggleButton.Parent = targetPage
-    Instance.new("UICorner", hardLockKeyToggleButton).CornerRadius = UDim.new(0, 6)
-
-    mouseTargetButton = createButton(targetPage, 120, "Mouse target: OFF", "Cursor target")
+    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Cursor target")
 
     local friendsLabel = Instance.new("TextLabel")
     friendsLabel.Size = UDim2.new(1, -10, 0, 20)
-    friendsLabel.Position = UDim2.new(0, 0, 0, 156)
+    friendsLabel.Position = UDim2.new(0, 0, 0, 124)
     friendsLabel.BackgroundTransparency = 1
     friendsLabel.Font = Enum.Font.GothamBold
     friendsLabel.TextSize = 11
@@ -1770,7 +1727,7 @@ local function buildGui()
 
     friendsList = Instance.new("ScrollingFrame")
     friendsList.Size = UDim2.new(1, -10, 0, 130)
-    friendsList.Position = UDim2.new(0, 0, 0, 178)
+    friendsList.Position = UDim2.new(0, 0, 0, 146)
     friendsList.BackgroundColor3 = currentTheme.secondary
     friendsList.BorderSizePixel = 0
     friendsList.ScrollBarThickness = 4
@@ -1908,7 +1865,7 @@ local function buildGui()
     connect(tabVisualButton.MouseButton1Click, function() setTab("Visual") end)
     connect(tabTargetButton.MouseButton1Click, function() setTab("Target") end)
 
-    connect(hardLockButton.MouseButton1Click, function() exactMode = not exactMode; refreshAllUI() end)
+
     connect(autoswapButton.MouseButton1Click, function() autoSwapEnabled = not autoSwapEnabled; refreshAllUI() end)
     connect(closeSwapButton.MouseButton1Click, function() closeSwapEnabled = not closeSwapEnabled; refreshAllUI() end)
     connect(checkVisibilityButton.MouseButton1Click, function() visibilityCheckEnabled = not visibilityCheckEnabled; syncTargetingOptions(); refreshAllUI() end)
@@ -1939,11 +1896,11 @@ local function buildGui()
     end)
 
     connect(mouseTargetButton.MouseButton1Click, function() mouseTargetMode = not mouseTargetMode; refreshAllUI() end)
-    connect(hardLockKeyToggleButton.MouseButton1Click, function() hardLockKeyEnabled = not hardLockKeyEnabled; refreshAllUI() end)
+
 
     connect(lockOnKeyButton.MouseButton1Click, function() waitingForKeybind = "LockOn"; lockOnKeyButton.Text = "..." end)
     connect(swapKeyButton.MouseButton1Click, function() waitingForKeybind = "SwapTarget"; swapKeyButton.Text = "..." end)
-    connect(hardLockKeyButton.MouseButton1Click, function() waitingForKeybind = "HardLock"; hardLockKeyButton.Text = "..." end)
+
     connect(reverseKeyButton.MouseButton1Click, function() waitingForKeybind = "ReverseLock"; reverseKeyButton.Text = "..." end)
 
     connect(reverseLockButton.MouseButton1Click, function() reverseLockEnabled = not reverseLockEnabled; refreshAllUI() end)
@@ -2084,7 +2041,7 @@ connect(UserInputService.InputBegan, function(input, gpe)
         end
         if t then setNewTarget(t, ty) end 
     end
-    if kc == keybinds.HardLock and hardLockKeyEnabled then exactMode = not exactMode; refreshAllUI() end
+
 end)
 
 connect(UserInputService.InputEnded, function(input)
@@ -2200,7 +2157,7 @@ end)
 
 print("✅ Lock-On Camera v3.2 loaded!")
 print("🎨 8 animated themes | 👾 NPC mode | 🔮 Prediction")
-print("⌨ X:lock C:swap V:hardlock B:reverse")
+print("⌨ X:lock C:swap B:reverse")
 print("💬 /e stop to unload")
 if queueteleport then
     if SCRIPT_URL then
