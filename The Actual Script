@@ -2221,16 +2221,20 @@ connect(UserInputService.InputBegan, function(input, gpe)
     end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local kc = input.KeyCode
-    if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
-    if kc == keybinds.LockOnPlus and lockOnPlusEnabled then lockOnPlusHeld = true end
     
     -- Custom shiftlock toggle with configurable key (only if keybind is enabled)
-    if kc == keybinds.ShiftLock and shiftlockKeyEnabled then 
+    -- Shiftlock works even when typing (like Roblox's built-in)
+    if kc == keybinds.ShiftLock and shiftlockKeyEnabled and not gpe then 
         toggleCustomShiftlock()
         refreshAllUI()
     end
     
     if gpe then return end
+    
+    -- These only work when NOT typing
+    if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
+    if kc == keybinds.LockOnPlus and lockOnPlusEnabled then lockOnPlusHeld = true end
+    
     if kc == keybinds.LockOn then
         if lockedOn then 
             if camera then lastLookDir = camera.CFrame.LookVector end
