@@ -2184,14 +2184,76 @@ local function buildGui()
     local indicatorStroke = Instance.new("UIStroke", indicator)
     indicatorStroke.Thickness = 2
     animatedElements[indicatorStroke] = "stroke"
+    
+    -- Health bar container
+    local healthContainer = Instance.new("Frame")
+    healthContainer.Size = UDim2.new(0, 160, 0, 20)
+    healthContainer.Position = UDim2.new(0.5, -80, 0, 42)
+    healthContainer.BackgroundColor3 = currentTheme.background
+    healthContainer.BackgroundTransparency = 0.1
+    healthContainer.Visible = false
+    healthContainer.Parent = gui
+    Instance.new("UICorner", healthContainer).CornerRadius = UDim.new(0, 10)
+    local healthContainerStroke = Instance.new("UIStroke", healthContainer)
+    healthContainerStroke.Thickness = 2
+    animatedElements[healthContainerStroke] = "stroke"
+    
+    -- Health bar fill
+    local healthBar = Instance.new("Frame")
+    healthBar.Size = UDim2.new(1, -8, 1, -8)
+    healthBar.Position = UDim2.new(0, 4, 0, 4)
+    healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+    healthBar.BorderSizePixel = 0
+    healthBar.Parent = healthContainer
+    Instance.new("UICorner", healthBar).CornerRadius = UDim.new(0, 6)
+    
+    -- Health text
+    local healthText = Instance.new("TextLabel")
+    healthText.Size = UDim2.new(1, 0, 1, 0)
+    healthText.BackgroundTransparency = 1
+    healthText.TextColor3 = Color3.new(1, 1, 1)
+    healthText.Font = Enum.Font.GothamBold
+    healthText.TextSize = 11
+    healthText.Text = "100/100"
+    healthText.Parent = healthContainer
 
     connect(RunService.Heartbeat, function()
         if indicator.Parent then
             if lockedOn and currentTarget then
                 indicator.Visible = true
+                healthContainer.Visible = true
                 indicator.Text = (currentTargetType == "npc" and "👾 " or "🎯 ") .. tostring(currentTarget.Name or "Unknown")
+                
+                -- Get target health
+                local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
+                if targetChar then
+                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        local hp = math.floor(hum.Health)
+                        local maxHp = math.floor(hum.MaxHealth)
+                        local ratio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                        
+                        -- Update health bar size
+                        healthBar.Size = UDim2.new(ratio * (1 - 8/160), 0, 1, -8)
+                        
+                        -- Update health bar color (green -> yellow -> red)
+                        if ratio > 0.5 then
+                            healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+                        elseif ratio > 0.25 then
+                            healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+                        else
+                            healthBar.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+                        end
+                        
+                        healthText.Text = hp .. "/" .. maxHp
+                    else
+                        healthText.Text = "???"
+                        healthBar.Size = UDim2.new(0, 0, 1, -8)
+                    end
+                end
             else
                 indicator.Visible = false
+                healthContainer.Visible = false
             end
         end
     end)
