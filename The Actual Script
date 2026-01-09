@@ -1427,17 +1427,124 @@ local function updateLockOnPlusRotation()
     myRoot.CFrame = CFrame.new(myRoot.Position) * CFrame.Angles(0, yAngle, 0)
 end
 
--- Bind at VERY HIGH priority (after shiftlock's +100) to override it
-RunService:BindToRenderStep(LOCKON_PLUS_BIND, Enum.RenderPriority.Camera.Value + 200, updateLockOnPlusRotation)
+-- AlignOrientation for physics-based rotation (handles fast dashes better)
+local lockOnPlusAlign = nil
+local lockOnPlusAttachment = nil
 
--- Also run via RenderStepped with defer to absolutely guarantee it runs last
+local function setupLockOnPlusConstraint()
+    local myChar = localPlayer.Character
+    if not myChar then return end
+    local myRoot = getRootPart(myChar)
+    if not myRoot then return end
+    
+    -- Create attachment if needed
+    if not lockOnPlusAttachment or not lockOnPlusAttachment.Parent then
+        lockOnPlusAttachment = Instance.new("Attachment")
+        lockOnPlusAttachment.Name = "LockOnPlusAttachment"
+        lockOnPlusAttachment.Parent = myRoot
+    end
+    
+    -- Create AlignOrientation if needed
+    if not lockOnPlusAlign or not lockOnPlusAlign.Parent then
+        lockOnPlusAlign = Instance.new("AlignOrientation")
+        lockOnPlusAlign.Name = "LockOnPlusAlign"
+        lockOnPlusAlign.Mode = Enum.OrientationAlignmentMode.OneAttachment
+        lockOnPlusAlign.Attachment0 = lockOnPlusAttachment
+        lockOnPlusAlign.RigidityEnabled = true -- Instant snap
+        lockOnPlusAlign.Responsiveness = 200 -- Very high responsiveness
+        lockOnPlusAlign.MaxTorque = math.huge
+        lockOnPlusAlign.Parent = myRoot
+    end
+end
+
+local function updateLockOnPlusAlignOrientation()
+    if not lockOnPlusEnabled or not lockOnPlusHeld or not lockedOn or not currentTarget then
+        -- Disable constraint when not in use
+        if lockOnPlusAlign then lockOnPlusAlign.Enabled = false end
+        return
+    end
+    
+    local myChar = localPlayer.Character
+    if not myChar then return end
+    local myRoot = getRootPart(myChar)
+    local myHum = myChar:FindFirstChildOfClass("Humanoid")
+    if not myRoot or not myHum then return end
+    
+    local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
+    local targetRoot = getRootPart(targetChar)
+    if not targetRoot then return end
+    
+    local targetPos = targetRoot.Position
+    local myPos = myRoot.Position
+    local direction = (targetPos - myPos)
+    local flatDirection = Vector3.new(direction.X, 0, direction.Z)
+    
+    if flatDirection.Magnitude < 0.1 then return end
+    
+    myHum.AutoRotate = false
+    
+    -- Setup constraint if needed
+    setupLockOnPlusConstraint()
+    
+    if lockOnPlusAlign then
+        lockOnPlusAlign.Enabled = true
+        lockOnPlusAlign.CFrame = CFrame.lookAt(Vector3.zero, flatDirection)
+    end
+end
+
+-- MAXIMUM ACCURACY: Multiple binds at different priorities to override everything
+local LOCKON_PLUS_BIND = "LockOnPlusCharRotation"
+local LOCKON_PLUS_BIND2 = "LockOnPlusCharRotation2"
+local LOCKON_PLUS_BIND3 = "LockOnPlusCharRotation3"
+
+-- Bind BEFORE camera scripts
+RunService:BindToRenderStep(LOCKON_PLUS_BIND, Enum.RenderPriority.Camera.Value - 1, function()
+    updateLockOnPlusRotation()
+    updateLockOnPlusAlignOrientation()
+end)
+
+-- Bind AFTER shiftlock (+100) but before Last
+RunService:BindToRenderStep(LOCKON_PLUS_BIND2, Enum.RenderPriority.Camera.Value + 200, function()
+    updateLockOnPlusRotation()
+    updateLockOnPlusAlignOrientation()
+end)
+
+-- Bind at absolute LAST priority
+RunService:BindToRenderStep(LOCKON_PLUS_BIND3, Enum.RenderPriority.Last.Value, function()
+    updateLockOnPlusRotation()
+    updateLockOnPlusAlignOrientation()
+end)
+
+-- Also run via RenderStepped with defer to run after ALL render steps
 local lockOnPlusConn = nil
 lockOnPlusConn = RunService.RenderStepped:Connect(function()
     if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
-        task.defer(updateLockOnPlusRotation)
+        task.defer(function()
+            updateLockOnPlusRotation()
+            updateLockOnPlusAlignOrientation()
+        end)
     end
 end)
 table.insert(allConnections, lockOnPlusConn)
+
+-- Also hook Heartbeat for physics-level accuracy
+local lockOnPlusHeartbeat = nil
+lockOnPlusHeartbeat = RunService.Heartbeat:Connect(function()
+    if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
+        updateLockOnPlusRotation()
+        updateLockOnPlusAlignOrientation()
+    end
+end)
+table.insert(allConnections, lockOnPlusHeartbeat)
+
+-- Stepped runs before physics - good for constraint setup
+local lockOnPlusStepped = nil
+lockOnPlusStepped = RunService.Stepped:Connect(function()
+    if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
+        updateLockOnPlusAlignOrientation()
+    end
+end)
+table.insert(allConnections, lockOnPlusStepped)
 
 --==================================================
 -- BUILD GUI
