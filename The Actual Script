@@ -469,6 +469,7 @@ local keybinds = {
     SwapTarget = Enum.KeyCode.C,
     HardLock = Enum.KeyCode.V,
     ReverseLock = Enum.KeyCode.B,
+    ShiftLock = Enum.KeyCode.LeftShift,
 }
 
 local hardLockKeyEnabled, waitingForKeybind = true, nil
@@ -480,6 +481,11 @@ local mouseTargetMode = false
 local predictionEnabled = false
 local predictionStrength = 0.15
 local forceCameraMode = false -- Alternative camera mode for games that mess with camera
+local customShiftlockEnabled = false -- Whether custom shiftlock is currently active
+local shiftlockAutoEnable = false -- Auto-enable shiftlock on script load
+local shiftlockKeyEnabled = true -- Whether the shiftlock keybind is active
+local mouseResistanceEnabled = false -- Allow mouse to pull away from target
+local mouseResistanceScale = 0.5 -- -1 to 1: negative = more freedom, positive = more pull to target
 
 --==================================================
 -- UI REFERENCES
@@ -497,6 +503,8 @@ local heightLabel, heightSliderBar, heightSliderKnob, rangeInput
 local extraSettingsFrame, extraSettingsButton, extraSettingsCloseButton
 local reverseLockButton, reverseKeyButton, perfectOffsetButton
 local npcModeButton, predictionButton, forceCameraButton
+local shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton
+local mouseResistanceButton, mouseResistanceSliderBar, mouseResistanceSliderKnob, mouseResistanceLabel
 local saveButton, loadButton
 local themeButtons = {}
 
@@ -529,10 +537,16 @@ local function saveSettings()
             npcModeEnabled = npcModeEnabled,
             predictionEnabled = predictionEnabled,
             forceCameraMode = forceCameraMode,
+            customShiftlockEnabled = customShiftlockEnabled,
+            shiftlockAutoEnable = shiftlockAutoEnable,
+            shiftlockKeyEnabled = shiftlockKeyEnabled,
+            mouseResistanceEnabled = mouseResistanceEnabled,
+            mouseResistanceScale = mouseResistanceScale,
             kb_LockOn = keybinds.LockOn.Name,
             kb_SwapTarget = keybinds.SwapTarget.Name,
             kb_HardLock = keybinds.HardLock.Name,
             kb_ReverseLock = keybinds.ReverseLock.Name,
+            kb_ShiftLock = keybinds.ShiftLock.Name,
         }
         if writefile then
             writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
@@ -575,16 +589,22 @@ local function applySettingsData(data)
     npcModeEnabled = (data.npcModeEnabled == true)
     predictionEnabled = (data.predictionEnabled == true)
     forceCameraMode = (data.forceCameraMode == true)
+    customShiftlockEnabled = (data.customShiftlockEnabled == true)
+    shiftlockAutoEnable = (data.shiftlockAutoEnable == true)
+    shiftlockKeyEnabled = (data.shiftlockKeyEnabled ~= false)
+    mouseResistanceEnabled = (data.mouseResistanceEnabled == true)
     hardLockKeyEnabled = (data.hardLockKeyEnabled ~= false)
     
     rangeLimit = tonumber(data.rangeLimit) or 0
     lockHeightOffset = tonumber(data.lockHeightOffset) or 0
+    mouseResistanceScale = tonumber(data.mouseResistanceScale) or 0.3
     
     -- New keybind format
     if data.kb_LockOn and Enum.KeyCode[data.kb_LockOn] then keybinds.LockOn = Enum.KeyCode[data.kb_LockOn] end
     if data.kb_SwapTarget and Enum.KeyCode[data.kb_SwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.kb_SwapTarget] end
     if data.kb_HardLock and Enum.KeyCode[data.kb_HardLock] then keybinds.HardLock = Enum.KeyCode[data.kb_HardLock] end
     if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
+    if data.kb_ShiftLock and Enum.KeyCode[data.kb_ShiftLock] then keybinds.ShiftLock = Enum.KeyCode[data.kb_ShiftLock] end
     
     -- Old formats
     if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
@@ -618,6 +638,30 @@ end
 
 local function getHumanoid(char) return char and char:FindFirstChildOfClass("Humanoid") end
 local function isFriendly(plr) return friendlies[plr.UserId] == true end
+
+--==================================================
+-- CUSTOM SHIFTLOCK SYSTEM (Uses ShiftLockModule)
+--==================================================
+
+local function enableCustomShiftlock()
+    if customShiftlockEnabled then return end
+    customShiftlockEnabled = true
+    if shiftLock then pcall(function() shiftLock:Enable() end) end
+end
+
+local function disableCustomShiftlock()
+    if not customShiftlockEnabled then return end
+    customShiftlockEnabled = false
+    if shiftLock then pcall(function() shiftLock:Disable() end) end
+end
+
+local function toggleCustomShiftlock()
+    if customShiftlockEnabled then
+        disableCustomShiftlock()
+    else
+        enableCustomShiftlock()
+    end
+end
 
 local function syncTargetingOptions()
     if targeting then 
@@ -727,6 +771,15 @@ local function refreshAllUI()
         if npcModeButton then npcModeButton.Text = "NPC Mode: " .. (npcModeEnabled and "ON" or "OFF") end
         if predictionButton then predictionButton.Text = "Prediction: " .. (predictionEnabled and "ON" or "OFF") end
         if forceCameraButton then forceCameraButton.Text = "Force Camera: " .. (forceCameraMode and "ON" or "OFF") end
+        if mouseResistanceButton then mouseResistanceButton.Text = "Mouse Resist: " .. (mouseResistanceEnabled and "ON" or "OFF") end
+        if mouseResistanceLabel then mouseResistanceLabel.Text = string.format("Resistance: %.0f%%", mouseResistanceScale * 100) end
+        if mouseResistanceSliderKnob and mouseResistanceSliderKnob.Parent then
+            mouseResistanceSliderKnob.Position = UDim2.new((mouseResistanceScale + 1) / 2, 0, 0.5, 0)
+        end
+        if centerShiftlockButton then centerShiftlockButton.Text = "Custom Shiftlock: " .. (customShiftlockEnabled and "ON" or "OFF") end
+        if shiftlockKeyButton then shiftlockKeyButton.Text = "Shiftlock Key: " .. keyCodeToText(keybinds.ShiftLock) end
+        if shiftlockKeyToggleButton then shiftlockKeyToggleButton.Text = shiftlockKeyEnabled and "On" or "Off" end
+        if shiftlockAutoEnableButton then shiftlockAutoEnableButton.Text = "Auto-Enable: " .. (shiftlockAutoEnable and "ON" or "OFF") end
         if lockOnKeyButton then lockOnKeyButton.Text = "Lock-on: " .. keyCodeToText(keybinds.LockOn) end
         if swapKeyButton then swapKeyButton.Text = "Swap: " .. keyCodeToText(keybinds.SwapTarget) end
         if hardLockKeyButton then hardLockKeyButton.Text = "Hard-lock: " .. keyCodeToText(keybinds.HardLock) end
@@ -756,7 +809,9 @@ local function applyThemeToUI()
             lockOnKeyButton, swapKeyButton, hardLockKeyButton, hardLockKeyToggleButton,
             mouseTargetButton, extraSettingsButton, extraSettingsCloseButton,
             reverseLockButton, reverseKeyButton, perfectOffsetButton,
-            npcModeButton, predictionButton, forceCameraButton, saveButton, loadButton
+            npcModeButton, predictionButton, forceCameraButton, mouseResistanceButton, 
+            shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton,
+            saveButton, loadButton
         }
         
         for _, b in ipairs(btns) do
@@ -872,6 +927,7 @@ local function fullCleanup()
     lockedOn, currentTarget = false, nil
     pcall(function() if camera then camera.CameraType = prevCameraType end end)
     pcall(function() RunService:UnbindFromRenderStep(BIND_NAME) end)
+    pcall(function() disableCustomShiftlock() end)
     pcall(function() if shiftLock then shiftLock:Destroy() end end)
     pcall(function() if visuals then visuals:Destroy() end end)
     pcall(function() if npcHighlight then npcHighlight:Destroy() end end)
@@ -1066,6 +1122,7 @@ local lastTargetPos = nil
 local lastCameraCheck = 0
 local forceCameraRef = nil -- Our own camera reference for force mode
 local forceUpdateConnection = nil -- Secondary high-priority update
+local lastPlayerLookDir = nil -- Track where player is trying to look for mouse resistance
 
 -- Aggressive camera override for games with custom camera scripts
 -- Only overrides ROTATION to look at target, keeps game's camera POSITION
@@ -1113,6 +1170,16 @@ local function forceCameraUpdate()
             local right = horiz.Unit:Cross(Vector3.new(0, 1, 0))
             local off = (lookPos + right * PERFECT_OFFSET_STUDS) - camPos
             if off.Magnitude > 0.5 then dir = off.Unit end
+        end
+    end
+    
+    -- Mouse resistance: controls how much camera pulls toward target
+    if mouseResistanceEnabled then
+        local currentLook = cam.CFrame.LookVector
+        local alpha = (mouseResistanceScale + 1) / 2
+        local blendedDir = currentLook:Lerp(dir, alpha)
+        if blendedDir.Magnitude > 0.001 then
+            dir = blendedDir.Unit
         end
     end
     
@@ -1278,6 +1345,24 @@ local function updateCamera(dt)
             local right = horiz.Unit:Cross(Vector3.new(0, 1, 0))
             local off = (lookPos + right * PERFECT_OFFSET_STUDS) - camPos
             if off.Magnitude > 0.5 then dir = off.Unit end
+        end
+    end
+
+    -- Mouse resistance: controls how much camera pulls toward target
+    -- Scale: -1 to 1
+    -- +1 = full lock on target (100% pull)
+    -- 0 = balanced (50% pull)
+    -- -1 = minimal lock (0% pull, almost free aim)
+    if mouseResistanceEnabled then
+        local currentLook = cam.CFrame.LookVector
+        -- Convert scale from -1,1 to 0,1 for lerp alpha
+        -- resistance 1 -> alpha 1 (full target)
+        -- resistance 0 -> alpha 0.5 (balanced)
+        -- resistance -1 -> alpha 0 (full player control)
+        local alpha = (mouseResistanceScale + 1) / 2
+        local blendedDir = currentLook:Lerp(dir, alpha)
+        if blendedDir.Magnitude > 0.001 then
+            dir = blendedDir.Unit
         end
     end
 
@@ -1598,8 +1683,38 @@ local function buildGui()
     end
 
     local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
-    centerShiftlockButton = createButton(visualPage, afterThemes, "⊙ Center shift-lock", "Center camera")
-    visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 40)
+    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Override all shiftlocks")
+    
+    -- Shiftlock key with On/Off toggle (like hardlock key)
+    shiftlockKeyButton = Instance.new("TextButton")
+    shiftlockKeyButton.Size = UDim2.new(0.68, 0, 0, 28)
+    shiftlockKeyButton.Position = UDim2.new(0, 0, 0, afterThemes + 32)
+    shiftlockKeyButton.Font = Enum.Font.GothamMedium
+    shiftlockKeyButton.TextSize = 12
+    shiftlockKeyButton.TextColor3 = Color3.new(1, 1, 1)
+    shiftlockKeyButton.Text = "Shiftlock Key: LeftShift"
+    shiftlockKeyButton.BorderSizePixel = 0
+    shiftlockKeyButton.BackgroundColor3 = currentTheme.secondary
+    shiftlockKeyButton.Parent = visualPage
+    Instance.new("UICorner", shiftlockKeyButton).CornerRadius = UDim.new(0, 6)
+    addTooltip(shiftlockKeyButton, "Change key")
+    
+    shiftlockKeyToggleButton = Instance.new("TextButton")
+    shiftlockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
+    shiftlockKeyToggleButton.Position = UDim2.new(0.7, 4, 0, afterThemes + 32)
+    shiftlockKeyToggleButton.Font = Enum.Font.GothamMedium
+    shiftlockKeyToggleButton.TextSize = 11
+    shiftlockKeyToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    shiftlockKeyToggleButton.Text = shiftlockKeyEnabled and "On" or "Off"
+    shiftlockKeyToggleButton.BorderSizePixel = 0
+    shiftlockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
+    shiftlockKeyToggleButton.Parent = visualPage
+    Instance.new("UICorner", shiftlockKeyToggleButton).CornerRadius = UDim.new(0, 6)
+    addTooltip(shiftlockKeyToggleButton, "Enable/disable keybind")
+    
+    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Enable on load")
+    
+    visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 100)
 
     -- TARGET PAGE
     local keysLabel = Instance.new("TextLabel")
@@ -1716,6 +1831,42 @@ local function buildGui()
     forceCameraButton = createButton(extraSettingsFrame, 200, "Force Camera: OFF", "Override game camera")
     forceCameraButton.Position = UDim2.new(0, 10, 0, 200); forceCameraButton.Size = UDim2.new(1, -20, 0, 28)
 
+    -- Mouse Resistance toggle and slider
+    mouseResistanceButton = createButton(extraSettingsFrame, 232, "Mouse Resist: OFF", "Allow pulling away")
+    mouseResistanceButton.Position = UDim2.new(0, 10, 0, 232); mouseResistanceButton.Size = UDim2.new(1, -20, 0, 28)
+    
+    mouseResistanceLabel = Instance.new("TextLabel")
+    mouseResistanceLabel.Size = UDim2.new(1, -20, 0, 16)
+    mouseResistanceLabel.Position = UDim2.new(0, 10, 0, 264)
+    mouseResistanceLabel.BackgroundTransparency = 1
+    mouseResistanceLabel.Font = Enum.Font.Gotham
+    mouseResistanceLabel.TextSize = 11
+    mouseResistanceLabel.TextColor3 = currentTheme.text
+    mouseResistanceLabel.TextXAlignment = Enum.TextXAlignment.Left
+    mouseResistanceLabel.Text = string.format("Resistance: %.0f%%", mouseResistanceScale * 100)
+    mouseResistanceLabel.Parent = extraSettingsFrame
+    
+    mouseResistanceSliderBar = Instance.new("Frame")
+    mouseResistanceSliderBar.Size = UDim2.new(1, -20, 0, 8)
+    mouseResistanceSliderBar.Position = UDim2.new(0, 10, 0, 282)
+    mouseResistanceSliderBar.BackgroundColor3 = currentTheme.secondary
+    mouseResistanceSliderBar.BorderSizePixel = 0
+    mouseResistanceSliderBar.Parent = extraSettingsFrame
+    Instance.new("UICorner", mouseResistanceSliderBar).CornerRadius = UDim.new(0, 4)
+    
+    mouseResistanceSliderKnob = Instance.new("Frame")
+    mouseResistanceSliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    -- Convert -1 to 1 range to 0 to 1 for position
+    mouseResistanceSliderKnob.Position = UDim2.new((mouseResistanceScale + 1) / 2, 0, 0.5, 0)
+    mouseResistanceSliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    mouseResistanceSliderKnob.BackgroundColor3 = currentTheme.primary1
+    mouseResistanceSliderKnob.BorderSizePixel = 0
+    mouseResistanceSliderKnob.Parent = mouseResistanceSliderBar
+    Instance.new("UICorner", mouseResistanceSliderKnob).CornerRadius = UDim.new(1, 0)
+    
+    -- Increase extra settings frame size to fit new elements
+    extraSettingsFrame.Size = UDim2.new(0, 200, 0, 305)
+
     -- EVENTS
     connect(openBtn.MouseButton1Click, function() mainFrame.Visible = true; openBtn.Visible = false end)
     connect(closeBtn.MouseButton1Click, function() mainFrame.Visible = false; openBtn.Visible = true; extraSettingsFrame.Visible = false end)
@@ -1768,7 +1919,24 @@ local function buildGui()
     connect(highlightButton.MouseButton1Click, function() if visuals then pcall(function() visuals:SetHighlightEnabled(not visuals:IsHighlightEnabled()) end); updateNPCHighlight() end; refreshAllUI() end)
     connect(highlightSecondButton.MouseButton1Click, function() if visuals then pcall(function() visuals:SetHighlightSecondEnabled(not visuals:IsHighlightSecondEnabled()) end) end; refreshAllUI() end)
     connect(selfFadeButton.MouseButton1Click, function() if visuals then pcall(function() visuals:SetSelfFadeEnabled(not visuals:IsSelfFadeEnabled()) end) end; refreshAllUI() end)
-    connect(centerShiftlockButton.MouseButton1Click, function() if shiftLock then pcall(function() shiftLock:EnableCenterSystem() end) end end)
+    
+    -- Custom Shiftlock controls
+    connect(centerShiftlockButton.MouseButton1Click, function() 
+        toggleCustomShiftlock()
+        refreshAllUI() 
+    end)
+    connect(shiftlockKeyButton.MouseButton1Click, function() 
+        waitingForKeybind = "ShiftLock"
+        shiftlockKeyButton.Text = "..." 
+    end)
+    connect(shiftlockKeyToggleButton.MouseButton1Click, function()
+        shiftlockKeyEnabled = not shiftlockKeyEnabled
+        refreshAllUI()
+    end)
+    connect(shiftlockAutoEnableButton.MouseButton1Click, function() 
+        shiftlockAutoEnable = not shiftlockAutoEnable
+        refreshAllUI() 
+    end)
 
     connect(mouseTargetButton.MouseButton1Click, function() mouseTargetMode = not mouseTargetMode; refreshAllUI() end)
     connect(hardLockKeyToggleButton.MouseButton1Click, function() hardLockKeyEnabled = not hardLockKeyEnabled; refreshAllUI() end)
@@ -1787,6 +1955,11 @@ local function buildGui()
         setupForceCameraHooks()
         refreshAllUI() 
     end)
+    
+    connect(mouseResistanceButton.MouseButton1Click, function()
+        mouseResistanceEnabled = not mouseResistanceEnabled
+        refreshAllUI()
+    end)
 
     connect(rangeInput.FocusLost, function() rangeLimit = math.max(0, tonumber(rangeInput.Text) or 0); rangeInput.Text = tostring(rangeLimit); syncTargetingOptions() end)
 
@@ -1799,6 +1972,20 @@ local function buildGui()
             if heightSliderKnob.Parent then heightSliderKnob.Position = UDim2.new(a, 0, 0.5, 0) end
             lockHeightOffset = SLIDER_MIN + (SLIDER_MAX - SLIDER_MIN) * a
             if heightLabel and heightLabel.Parent then heightLabel.Text = string.format("Height: %.1f", lockHeightOffset) end
+        end
+    end)
+    
+    -- Mouse resistance slider
+    local draggingResistance = false
+    connect(mouseResistanceSliderBar.InputBegan, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then draggingResistance = true end end)
+    connect(mouseResistanceSliderBar.InputEnded, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then draggingResistance = false end end)
+    connect(UserInputService.InputChanged, function(i)
+        if draggingResistance and mouseResistanceSliderBar.Parent and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local a = math.clamp((UserInputService:GetMouseLocation().X - mouseResistanceSliderBar.AbsolutePosition.X) / mouseResistanceSliderBar.AbsoluteSize.X, 0, 1)
+            if mouseResistanceSliderKnob.Parent then mouseResistanceSliderKnob.Position = UDim2.new(a, 0, 0.5, 0) end
+            -- Convert 0-1 slider position to -1 to 1 scale
+            mouseResistanceScale = (a * 2) - 1
+            if mouseResistanceLabel and mouseResistanceLabel.Parent then mouseResistanceLabel.Text = string.format("Resistance: %.0f%%", mouseResistanceScale * 100) end
         end
     end)
 
@@ -1837,6 +2024,15 @@ end
 
 buildGui()
 
+-- Auto-enable custom shiftlock if setting is on OR if it was previously enabled
+if shiftlockAutoEnable or customShiftlockEnabled then
+    task.defer(function()
+        task.wait(0.5) -- Small delay to let game fully initialize
+        enableCustomShiftlock()
+        refreshAllUI()
+    end)
+end
+
 --==================================================
 -- INPUT HANDLING
 --==================================================
@@ -1851,7 +2047,13 @@ connect(UserInputService.InputBegan, function(input, gpe)
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
     local kc = input.KeyCode
     if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
-    if kc == Enum.KeyCode.LeftShift and shiftLock then pcall(function() shiftLock:Toggle() end) end
+    
+    -- Custom shiftlock toggle with configurable key (only if keybind is enabled)
+    if kc == keybinds.ShiftLock and shiftlockKeyEnabled then 
+        toggleCustomShiftlock()
+        refreshAllUI()
+    end
+    
     if gpe then return end
     if kc == keybinds.LockOn then
         if lockedOn then 
@@ -1935,6 +2137,13 @@ local function onCharacterAdded(char)
                     visuals:SetSelfFadeEnabled(savedSelfFade)
                 end)
             end
+        end
+        
+        -- Re-enable custom shiftlock if it was on
+        if customShiftlockEnabled then
+            -- Force re-enable (reset the flag first so enable actually runs)
+            customShiftlockEnabled = false
+            enableCustomShiftlock()
         end
         
         -- Update NPC highlight if needed
