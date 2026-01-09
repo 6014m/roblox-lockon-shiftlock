@@ -1,5 +1,5 @@
 -- ShiftLockModule - Bulletproof CENTERED Shiftlock
--- Forces camera to stay CENTERED (no side offset)
+-- Disables game's shiftlock via PlayerModule then takes full control
 -- Overrides ANY other shiftlock (default or custom game scripts)
 
 local Players = game:GetService("Players")
@@ -24,6 +24,10 @@ function ShiftLock.new(localPlayer)
     self.bindName = "CustomShiftLock_" .. localPlayer.UserId
     self.bindName2 = "CustomShiftLockPost_" .. localPlayer.UserId
     self.renderConn = nil
+    
+    -- Store original MouseLockController reference to disable it
+    self.mouseLockController = nil
+    self.originalMouseLockEnabled = nil
 
     self.charConn = nil
     self.humConn = nil
@@ -89,6 +93,54 @@ function ShiftLock:_updateCharacterRefs(char)
     end)
 end
 
+-- Disable the game's built-in MouseLockController
+function ShiftLock:_disableGameShiftLock()
+    pcall(function()
+        -- Method 1: Disable DevEnableMouseLock
+        self.player.DevEnableMouseLock = false
+    end)
+    
+    pcall(function()
+        -- Method 2: Access PlayerModule's MouseLockController and disable it
+        local playerScripts = self.player:FindFirstChild("PlayerScripts")
+        if playerScripts then
+            local playerModule = playerScripts:FindFirstChild("PlayerModule")
+            if playerModule then
+                -- Try to require and disable the CameraModule's MouseLockController
+                local success, cameraModule = pcall(function()
+                    return require(playerModule:WaitForChild("CameraModule", 1))
+                end)
+                
+                if success and cameraModule then
+                    -- Try to access activeMouseLockController
+                    if cameraModule.activeMouseLockController then
+                        self.mouseLockController = cameraModule.activeMouseLockController
+                        -- Disable it
+                        pcall(function()
+                            if self.mouseLockController.SetIsMouseLocked then
+                                self.mouseLockController:SetIsMouseLocked(false)
+                            end
+                        end)
+                        pcall(function()
+                            if self.mouseLockController.EnableMouseLock then
+                                self.mouseLockController:EnableMouseLock(false)
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+    
+    pcall(function()
+        -- Method 3: Set GameSettings to disable mouse lock mode
+        local gameSettings = UserSettings():GetService("UserGameSettings")
+        if gameSettings then
+            gameSettings.ControlMode = Enum.ControlMode.Classic
+        end
+    end)
+end
+
 function ShiftLock:_doShiftLockFrame()
     local char = self.player.Character
     if not char then return end
@@ -98,8 +150,7 @@ function ShiftLock:_doShiftLockFrame()
     
     if not hum then return end
 
-    -- ALWAYS force CameraOffset to 0 when enabled (even if not locked yet)
-    -- This prevents the camera from shifting
+    -- ALWAYS force CameraOffset to 0 when enabled (keeps camera centered)
     if self.enabled then
         pcall(function()
             hum.CameraOffset = Vector3.new(0, 0, 0)
@@ -123,10 +174,13 @@ function ShiftLock:_doShiftLockFrame()
     local cam = workspace.CurrentCamera
     if not cam then return end
 
-    -- FORCE everything every frame
+    -- FORCE everything every frame to override any game scripts
     pcall(function() UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter end)
     pcall(function() hum.AutoRotate = false end)
     pcall(function() UserInputService.MouseIconEnabled = false end)
+    
+    -- Keep game's shiftlock disabled
+    pcall(function() self.player.DevEnableMouseLock = false end)
 
     -- Rotate character to face camera direction
     local look = cam.CFrame.LookVector
@@ -163,6 +217,9 @@ end
 
 function ShiftLock:_applyLock()
     self.shiftLocked = true
+    
+    -- Disable game's shiftlock first
+    self:_disableGameShiftLock()
 
     local hum = self.humanoid
     if hum then
@@ -199,7 +256,9 @@ end
 function ShiftLock:EnableCenterSystem()
     if self.enabled then return end
     self.enabled = true
-    pcall(function() self.player.DevEnableMouseLock = false end)
+    
+    -- Disable game's shiftlock when enabling our system
+    self:_disableGameShiftLock()
 end
 
 function ShiftLock:Enable()
@@ -255,6 +314,11 @@ function ShiftLock:Destroy()
         self.gui = nil
         self.vIcon = nil
     end
+    
+    -- Re-enable game's shiftlock option
+    pcall(function()
+        self.player.DevEnableMouseLock = true
+    end)
 end
 
 return ShiftLock
