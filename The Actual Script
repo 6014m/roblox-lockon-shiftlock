@@ -508,6 +508,64 @@ local lockOnPlusEnabled = false -- LockOn+: rotate character to face target whil
 local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 
 --==================================================
+-- GAME-SPECIFIC FUNCTIONS
+--==================================================
+
+local CURRENT_GAME_ID = tostring(game.PlaceId)
+
+-- Game function configurations
+local GAME_FUNCTIONS = {
+    ["7041939546"] = { -- JJS
+        name = "JJS",
+        functions = {
+            {
+                name = "Nanami Perfect Special",
+                description = "Auto-time R special based on target HP (27 stud range)",
+                enabled = false,
+                execute = function(target)
+                    if not target then return end
+                    local targetChar = target.Character
+                    if not targetChar then return end
+                    
+                    -- Check distance (must be within 27 studs)
+                    local myChar = game.Players.LocalPlayer.Character
+                    if not myChar then return end
+                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                    if not myRoot or not targetRoot then return end
+                    
+                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                    if distance > 27 then return end -- Too far away
+                    
+                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                    if not hum then return end
+                    
+                    local hp = hum.Health
+                    local maxHp = hum.MaxHealth
+                    local hpPercent = (hp / maxHp) * 100
+                    
+                    -- Determine wait time based on health
+                    local waitTime = 0.63 -- Default for 100-80%
+                    if hpPercent < 80 then
+                        waitTime = 0.55 -- 80-0%
+                    end
+                    
+                    task.delay(waitTime, function()
+                        pcall(function()
+                            local args = { targetChar }
+                            game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
+                        end)
+                    end)
+                end
+            }
+        }
+    }
+}
+
+local currentGameFunctions = GAME_FUNCTIONS[CURRENT_GAME_ID]
+local gameFunctionStates = {} -- Track enabled/disabled state of each function
+
+--==================================================
 -- UI REFERENCES
 --==================================================
 
@@ -526,6 +584,8 @@ local npcModeButton, predictionButton, forceCameraButton
 local shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton
 local mouseResistanceButton, mouseResistanceSliderBar, mouseResistanceSliderKnob, mouseResistanceLabel
 local lockOnPlusButton, lockOnPlusKeyButton
+local gameFunctionsButton, gameFunctionsFrame, gameFunctionsCloseButton
+local gameFunctionButtons = {}
 local saveButton, loadButton
 local themeButtons = {}
 
@@ -1123,11 +1183,42 @@ local function findBestTargetCombined(exclude)
     return best, bestType
 end
 
+-- Cache for second closest target to prevent flickering
+local cachedSecondTarget = nil
+local cachedSecondTime = 0
+local SECOND_TARGET_CACHE_TIME = 0.5 -- Only update every 0.5 seconds
+
+local function getCachedSecondTarget(exclude)
+    local now = tick()
+    
+    -- If cache is still valid and cached target still exists/valid, use it
+    if cachedSecondTarget and (now - cachedSecondTime) < SECOND_TARGET_CACHE_TIME then
+        -- Verify cached target is still valid
+        if cachedSecondTarget ~= exclude then
+            local char = cachedSecondTarget.Character
+            if char and getRootPart(char) then
+                return cachedSecondTarget
+            end
+        end
+    end
+    
+    -- Cache expired or invalid, get new target
+    local newTarget = getBestTarget(exclude)
+    
+    -- Only update cache if target changed significantly or cache expired
+    if newTarget ~= cachedSecondTarget or (now - cachedSecondTime) >= SECOND_TARGET_CACHE_TIME then
+        cachedSecondTarget = newTarget
+        cachedSecondTime = now
+    end
+    
+    return cachedSecondTarget
+end
+
 local function refreshVisuals()
     if visuals then
         pcall(function()
             if currentTargetType == "player" then 
-                visuals:UpdateHighlights(currentTarget, lockedOn, function(ex) return getBestTarget(ex) end, isFriendly)
+                visuals:UpdateHighlights(currentTarget, lockedOn, function(ex) return getCachedSecondTarget(ex) end, isFriendly)
             else 
                 visuals:UpdateHighlights(nil, false, function() return nil end, isFriendly) 
             end
@@ -2020,10 +2111,76 @@ local function buildGui()
     lockOnPlusKeyButton.Position = UDim2.new(0, 10, 0, 332); lockOnPlusKeyButton.Size = UDim2.new(1, -20, 0, 28)
     
     extraSettingsFrame.Size = UDim2.new(0, 200, 0, 375)
+    
+    -- GAME-SPECIFIC FUNCTIONS (only show if current game has functions)
+    if currentGameFunctions then
+        print("🎮 Game functions detected for: " .. currentGameFunctions.name)
+        
+        -- Button in extra settings to open game functions
+        gameFunctionsButton = createButton(extraSettingsFrame, 375, "🎮 " .. currentGameFunctions.name .. " Functions", "Game-specific features")
+        gameFunctionsButton.Position = UDim2.new(0, 10, 0, 375); gameFunctionsButton.Size = UDim2.new(1, -20, 0, 28)
+        gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
+        
+        extraSettingsFrame.Size = UDim2.new(0, 200, 0, 420)
+        
+        -- Game functions frame
+        gameFunctionsFrame = Instance.new("Frame")
+        gameFunctionsFrame.Size = UDim2.new(0, 200, 0, 150)
+        gameFunctionsFrame.Position = UDim2.new(0, 545, 1, -440)
+        gameFunctionsFrame.BackgroundColor3 = currentTheme.background
+        gameFunctionsFrame.BorderSizePixel = 0
+        gameFunctionsFrame.Visible = false
+        gameFunctionsFrame.Parent = gui
+        Instance.new("UICorner", gameFunctionsFrame).CornerRadius = UDim.new(0, 12)
+        local gameFuncStroke = Instance.new("UIStroke", gameFunctionsFrame)
+        gameFuncStroke.Thickness = 2
+        animatedElements[gameFuncStroke] = "stroke"
+        
+        -- Header
+        local gameFuncHeader = Instance.new("TextLabel")
+        gameFuncHeader.Size = UDim2.new(1, -50, 0, 26)
+        gameFuncHeader.Position = UDim2.new(0, 12, 0, 8)
+        gameFuncHeader.BackgroundTransparency = 1
+        gameFuncHeader.Font = Enum.Font.GothamBold
+        gameFuncHeader.TextSize = 14
+        gameFuncHeader.TextXAlignment = Enum.TextXAlignment.Left
+        gameFuncHeader.TextColor3 = currentTheme.text
+        gameFuncHeader.Text = "🎮 " .. currentGameFunctions.name
+        gameFuncHeader.Parent = gameFunctionsFrame
+        
+        -- Close button
+        gameFunctionsCloseButton = Instance.new("TextButton")
+        gameFunctionsCloseButton.Size = UDim2.new(0, 24, 0, 24)
+        gameFunctionsCloseButton.Position = UDim2.new(1, -32, 0, 8)
+        gameFunctionsCloseButton.BackgroundColor3 = currentTheme.secondary
+        gameFunctionsCloseButton.Font = Enum.Font.GothamBold
+        gameFunctionsCloseButton.TextSize = 14
+        gameFunctionsCloseButton.TextColor3 = Color3.new(1, 1, 1)
+        gameFunctionsCloseButton.Text = "×"
+        gameFunctionsCloseButton.BorderSizePixel = 0
+        gameFunctionsCloseButton.Parent = gameFunctionsFrame
+        Instance.new("UICorner", gameFunctionsCloseButton).CornerRadius = UDim.new(0, 6)
+        
+        -- Create buttons for each function
+        local funcY = 40
+        for i, func in ipairs(currentGameFunctions.functions) do
+            gameFunctionStates[func.name] = false -- Default off
+            
+            local funcBtn = createButton(gameFunctionsFrame, funcY, func.name .. ": OFF", func.description)
+            funcBtn.Position = UDim2.new(0, 10, 0, funcY)
+            funcBtn.Size = UDim2.new(1, -20, 0, 28)
+            gameFunctionButtons[func.name] = funcBtn
+            
+            funcY = funcY + 32
+        end
+        
+        -- Adjust frame height based on number of functions
+        gameFunctionsFrame.Size = UDim2.new(0, 200, 0, funcY + 15)
+    end
 
     -- EVENTS
     connect(openBtn.MouseButton1Click, function() playClickSound(); mainFrame.Visible = true; openBtn.Visible = false end)
-    connect(closeBtn.MouseButton1Click, function() playClickSound(); mainFrame.Visible = false; openBtn.Visible = true; extraSettingsFrame.Visible = false end)
+    connect(closeBtn.MouseButton1Click, function() playClickSound(); mainFrame.Visible = false; openBtn.Visible = true; extraSettingsFrame.Visible = false; if gameFunctionsFrame then gameFunctionsFrame.Visible = false end end)
     connect(infoToggleButton.MouseButton1Click, function()
         playClickSound()
         toggleTooltips()
@@ -2032,6 +2189,34 @@ local function buildGui()
     end)
     connect(extraSettingsButton.MouseButton1Click, function() playClickSound(); extraSettingsFrame.Visible = not extraSettingsFrame.Visible end)
     connect(extraSettingsCloseButton.MouseButton1Click, function() playClickSound(); extraSettingsFrame.Visible = false end)
+    
+    -- Game functions button events
+    if gameFunctionsButton then
+        connect(gameFunctionsButton.MouseButton1Click, function() 
+            playClickSound()
+            gameFunctionsFrame.Visible = not gameFunctionsFrame.Visible 
+        end)
+    end
+    if gameFunctionsCloseButton then
+        connect(gameFunctionsCloseButton.MouseButton1Click, function() 
+            playClickSound()
+            gameFunctionsFrame.Visible = false 
+        end)
+    end
+    
+    -- Game function toggle events
+    if currentGameFunctions then
+        for i, func in ipairs(currentGameFunctions.functions) do
+            local btn = gameFunctionButtons[func.name]
+            if btn then
+                connect(btn.MouseButton1Click, function()
+                    playClickSound()
+                    gameFunctionStates[func.name] = not gameFunctionStates[func.name]
+                    btn.Text = func.name .. ": " .. (gameFunctionStates[func.name] and "ON" or "OFF")
+                end)
+            end
+        end
+    end
 
     connect(saveButton.MouseButton1Click, function()
         playClickSound()
@@ -2329,6 +2514,18 @@ connect(UserInputService.InputBegan, function(input, gpe)
             t, ty = findBestTargetCombined(currentTarget)
         end
         if t then setNewTarget(t, ty) end 
+    end
+    
+    -- Game-specific function triggers
+    if currentGameFunctions and lockedOn and currentTarget then
+        -- JJS Nanami Perfect Special (R key)
+        if kc == Enum.KeyCode.R then
+            for i, func in ipairs(currentGameFunctions.functions) do
+                if func.name == "Nanami Perfect Special" and gameFunctionStates[func.name] then
+                    func.execute(currentTarget)
+                end
+            end
+        end
     end
 
 end)
