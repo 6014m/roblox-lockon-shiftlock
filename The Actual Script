@@ -513,53 +513,57 @@ local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 
 local CURRENT_GAME_ID = tostring(game.PlaceId)
 
--- Game function configurations
-local GAME_FUNCTIONS = {
-    ["7041939546"] = { -- JJS
-        name = "JJS",
-        functions = {
-            {
-                name = "Nanami Perfect Special",
-                description = "Auto-time R special based on target HP (27 stud range)",
-                enabled = false,
-                execute = function(target)
-                    if not target then return end
-                    local targetChar = target.Character
-                    if not targetChar then return end
-                    
-                    -- Check distance (must be within 27 studs)
-                    local myChar = game.Players.LocalPlayer.Character
-                    if not myChar then return end
-                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                    if not myRoot or not targetRoot then return end
-                    
-                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
-                    if distance > 27 then return end -- Too far away
-                    
-                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
-                    if not hum then return end
-                    
-                    local hp = hum.Health
-                    local maxHp = hum.MaxHealth
-                    local hpPercent = (hp / maxHp) * 100
-                    
-                    -- Determine wait time based on health
-                    local waitTime = 0.63 -- Default for 100-80%
-                    if hpPercent < 80 then
-                        waitTime = 0.55 -- 80-0%
-                    end
-                    
-                    task.delay(waitTime, function()
-                        pcall(function()
-                            local args = { targetChar }
-                            game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
-                        end)
-                    end)
+-- JJS function definition (shared across multiple place IDs)
+local JJS_FUNCTIONS = {
+    name = "JJS",
+    functions = {
+        {
+            name = "Nanami Perfect Special",
+            description = "Auto-time R special based on target HP (27 stud range)",
+            enabled = false,
+            execute = function(target)
+                if not target then return end
+                local targetChar = target.Character
+                if not targetChar then return end
+                
+                -- Check distance (must be within 27 studs)
+                local myChar = game.Players.LocalPlayer.Character
+                if not myChar then return end
+                local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                if not myRoot or not targetRoot then return end
+                
+                local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                if distance > 27 then return end -- Too far away
+                
+                local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                if not hum then return end
+                
+                local hp = hum.Health
+                local maxHp = hum.MaxHealth
+                local hpPercent = (hp / maxHp) * 100
+                
+                -- Determine wait time based on health
+                local waitTime = 0.63 -- Default for 100-80%
+                if hpPercent < 80 then
+                    waitTime = 0.55 -- 80-0%
                 end
-            }
+                
+                task.delay(waitTime, function()
+                    pcall(function()
+                        local args = { targetChar }
+                        game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
+                    end)
+                end)
+            end
         }
     }
+}
+
+-- Game function configurations (multiple IDs can point to same functions)
+local GAME_FUNCTIONS = {
+    -- JJS (main game + any sub-games)
+    ["3508322461"] = JJS_FUNCTIONS,
 }
 
 local currentGameFunctions = GAME_FUNCTIONS[CURRENT_GAME_ID]
