@@ -511,63 +511,95 @@ local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 -- GAME-SPECIFIC FUNCTIONS
 --==================================================
 
-local CURRENT_GAME_ID = tostring(game.PlaceId)
-
--- JJS function definition (shared across multiple place IDs)
-local JJS_FUNCTIONS = {
-    name = "JJS",
-    functions = {
-        {
-            name = "Nanami Perfect Special",
-            description = "Auto-time R special based on target HP (27 stud range)",
-            enabled = false,
-            execute = function(target)
-                if not target then return end
-                local targetChar = target.Character
-                if not targetChar then return end
-                
-                -- Check distance (must be within 27 studs)
-                local myChar = game.Players.LocalPlayer.Character
-                if not myChar then return end
-                local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-                local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                if not myRoot or not targetRoot then return end
-                
-                local distance = (myRoot.Position - targetRoot.Position).Magnitude
-                if distance > 27 then return end -- Too far away
-                
-                local hum = targetChar:FindFirstChildOfClass("Humanoid")
-                if not hum then return end
-                
-                local hp = hum.Health
-                local maxHp = hum.MaxHealth
-                local hpPercent = (hp / maxHp) * 100
-                
-                -- Determine wait time based on health
-                local waitTime = 0.63 -- Default for 100-80%
-                if hpPercent < 80 then
-                    waitTime = 0.55 -- 80-0%
-                end
-                
-                task.delay(waitTime, function()
-                    pcall(function()
-                        local args = { targetChar }
-                        game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
+-- Available games with functions (add more here)
+local AVAILABLE_GAMES = {
+    {
+        name = "JJS",
+        ids = {"3508322461"},
+        functions = {
+            {
+                name = "Nanami Perfect Special",
+                description = "Auto-time R special based on target HP (27 stud range)",
+                enabled = false,
+                execute = function(target)
+                    if not target then return end
+                    local targetChar = target.Character
+                    if not targetChar then return end
+                    
+                    -- Check distance (must be within 27 studs)
+                    local myChar = game.Players.LocalPlayer.Character
+                    if not myChar then return end
+                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                    if not myRoot or not targetRoot then return end
+                    
+                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                    if distance > 27 then return end -- Too far away
+                    
+                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                    if not hum then return end
+                    
+                    local hp = hum.Health
+                    local maxHp = hum.MaxHealth
+                    local hpPercent = (hp / maxHp) * 100
+                    
+                    -- Determine wait time based on health
+                    local waitTime = 0.63 -- Default for 100-80%
+                    if hpPercent < 80 then
+                        waitTime = 0.55 -- 80-0%
+                    end
+                    
+                    task.delay(waitTime, function()
+                        pcall(function()
+                            local args = { targetChar }
+                            game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
+                        end)
                     end)
-                end)
-            end
+                end
+            }
         }
-    }
+    },
+    -- Add more games here:
+    -- {
+    --     name = "Game Name",
+    --     ids = {"id1", "id2"},
+    --     functions = { ... }
+    -- },
 }
 
--- Game function configurations (multiple IDs can point to same functions)
-local GAME_FUNCTIONS = {
-    -- JJS (main game + any sub-games)
-    ["3508322461"] = JJS_FUNCTIONS,
-}
-
-local currentGameFunctions = GAME_FUNCTIONS[CURRENT_GAME_ID]
+local selectedGame = nil -- Currently selected game
 local gameFunctionStates = {} -- Track enabled/disabled state of each function
+
+-- Get list of game names for autofill
+local function getGameNames()
+    local names = {}
+    for _, game in ipairs(AVAILABLE_GAMES) do
+        table.insert(names, game.name)
+    end
+    return names
+end
+
+-- Find game by name
+local function findGameByName(name)
+    for _, game in ipairs(AVAILABLE_GAMES) do
+        if game.name:lower() == name:lower() then
+            return game
+        end
+    end
+    return nil
+end
+
+-- Find games matching partial name (for autofill)
+local function findMatchingGames(partial)
+    local matches = {}
+    partial = partial:lower()
+    for _, game in ipairs(AVAILABLE_GAMES) do
+        if game.name:lower():sub(1, #partial) == partial then
+            table.insert(matches, game.name)
+        end
+    end
+    return matches
+end
 
 --==================================================
 -- UI REFERENCES
@@ -589,6 +621,7 @@ local shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton
 local mouseResistanceButton, mouseResistanceSliderBar, mouseResistanceSliderKnob, mouseResistanceLabel
 local lockOnPlusButton, lockOnPlusKeyButton
 local gameFunctionsButton, gameFunctionsFrame, gameFunctionsCloseButton
+local gameSelectInput, gameSelectList, gameSelectFrame
 local gameFunctionButtons = {}
 local saveButton, loadButton
 local themeButtons = {}
@@ -2114,73 +2147,245 @@ local function buildGui()
     lockOnPlusKeyButton = createButton(extraSettingsFrame, 332, "LockOn+ Key: Q", "Hold to activate")
     lockOnPlusKeyButton.Position = UDim2.new(0, 10, 0, 332); lockOnPlusKeyButton.Size = UDim2.new(1, -20, 0, 28)
     
-    extraSettingsFrame.Size = UDim2.new(0, 200, 0, 375)
+    -- GAME-SPECIFIC FUNCTIONS - Always show selector
+    -- Game selector button
+    gameFunctionsButton = createButton(extraSettingsFrame, 368, "🎮 Game Functions", "Select game for special features")
+    gameFunctionsButton.Position = UDim2.new(0, 10, 0, 368); gameFunctionsButton.Size = UDim2.new(1, -20, 0, 28)
+    gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
     
-    -- GAME-SPECIFIC FUNCTIONS (only show if current game has functions)
-    if currentGameFunctions then
-        print("🎮 Game functions detected for: " .. currentGameFunctions.name)
+    extraSettingsFrame.Size = UDim2.new(0, 200, 0, 410)
+    
+    -- Game functions frame (game selector + functions)
+    gameFunctionsFrame = Instance.new("Frame")
+    gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 200)
+    gameFunctionsFrame.Position = UDim2.new(0, 545, 1, -440)
+    gameFunctionsFrame.BackgroundColor3 = currentTheme.background
+    gameFunctionsFrame.BorderSizePixel = 0
+    gameFunctionsFrame.Visible = false
+    gameFunctionsFrame.Parent = gui
+    Instance.new("UICorner", gameFunctionsFrame).CornerRadius = UDim.new(0, 12)
+    local gameFuncStroke = Instance.new("UIStroke", gameFunctionsFrame)
+    gameFuncStroke.Thickness = 2
+    animatedElements[gameFuncStroke] = "stroke"
+    
+    -- Header
+    local gameFuncHeader = Instance.new("TextLabel")
+    gameFuncHeader.Name = "Header"
+    gameFuncHeader.Size = UDim2.new(1, -50, 0, 26)
+    gameFuncHeader.Position = UDim2.new(0, 12, 0, 8)
+    gameFuncHeader.BackgroundTransparency = 1
+    gameFuncHeader.Font = Enum.Font.GothamBold
+    gameFuncHeader.TextSize = 14
+    gameFuncHeader.TextXAlignment = Enum.TextXAlignment.Left
+    gameFuncHeader.TextColor3 = currentTheme.text
+    gameFuncHeader.Text = "🎮 Game Functions"
+    gameFuncHeader.Parent = gameFunctionsFrame
+    
+    -- Close button
+    gameFunctionsCloseButton = Instance.new("TextButton")
+    gameFunctionsCloseButton.Size = UDim2.new(0, 24, 0, 24)
+    gameFunctionsCloseButton.Position = UDim2.new(1, -32, 0, 8)
+    gameFunctionsCloseButton.BackgroundColor3 = currentTheme.secondary
+    gameFunctionsCloseButton.Font = Enum.Font.GothamBold
+    gameFunctionsCloseButton.TextSize = 14
+    gameFunctionsCloseButton.TextColor3 = Color3.new(1, 1, 1)
+    gameFunctionsCloseButton.Text = "×"
+    gameFunctionsCloseButton.BorderSizePixel = 0
+    gameFunctionsCloseButton.Parent = gameFunctionsFrame
+    Instance.new("UICorner", gameFunctionsCloseButton).CornerRadius = UDim.new(0, 6)
+    
+    -- Game selector label
+    local selectLabel = Instance.new("TextLabel")
+    selectLabel.Size = UDim2.new(1, -20, 0, 18)
+    selectLabel.Position = UDim2.new(0, 10, 0, 38)
+    selectLabel.BackgroundTransparency = 1
+    selectLabel.Font = Enum.Font.GothamMedium
+    selectLabel.TextSize = 11
+    selectLabel.TextXAlignment = Enum.TextXAlignment.Left
+    selectLabel.TextColor3 = currentTheme.text
+    selectLabel.Text = "Select Game:"
+    selectLabel.Parent = gameFunctionsFrame
+    
+    -- Game selector input
+    gameSelectInput = Instance.new("TextBox")
+    gameSelectInput.Size = UDim2.new(1, -20, 0, 28)
+    gameSelectInput.Position = UDim2.new(0, 10, 0, 58)
+    gameSelectInput.BackgroundColor3 = currentTheme.secondary
+    gameSelectInput.BorderSizePixel = 0
+    gameSelectInput.Font = Enum.Font.GothamMedium
+    gameSelectInput.TextSize = 12
+    gameSelectInput.TextColor3 = Color3.new(1, 1, 1)
+    gameSelectInput.PlaceholderText = "Type game name..."
+    gameSelectInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+    gameSelectInput.Text = ""
+    gameSelectInput.ClearTextOnFocus = false
+    gameSelectInput.Parent = gameFunctionsFrame
+    Instance.new("UICorner", gameSelectInput).CornerRadius = UDim.new(0, 6)
+    
+    -- Autofill dropdown list
+    gameSelectList = Instance.new("Frame")
+    gameSelectList.Size = UDim2.new(1, -20, 0, 0)
+    gameSelectList.Position = UDim2.new(0, 10, 0, 88)
+    gameSelectList.BackgroundColor3 = currentTheme.secondary
+    gameSelectList.BorderSizePixel = 0
+    gameSelectList.Visible = false
+    gameSelectList.ClipsDescendants = true
+    gameSelectList.Parent = gameFunctionsFrame
+    Instance.new("UICorner", gameSelectList).CornerRadius = UDim.new(0, 6)
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = gameSelectList
+    
+    -- Container for function buttons (below selector)
+    local funcContainer = Instance.new("Frame")
+    funcContainer.Name = "FuncContainer"
+    funcContainer.Size = UDim2.new(1, -20, 0, 0)
+    funcContainer.Position = UDim2.new(0, 10, 0, 95)
+    funcContainer.BackgroundTransparency = 1
+    funcContainer.Parent = gameFunctionsFrame
+    
+    -- Function to rebuild the functions list
+    local function rebuildGameFunctions()
+        -- Clear old buttons
+        for _, child in ipairs(funcContainer:GetChildren()) do
+            child:Destroy()
+        end
+        gameFunctionButtons = {}
         
-        -- Button in extra settings to open game functions
-        gameFunctionsButton = createButton(extraSettingsFrame, 375, "🎮 " .. currentGameFunctions.name .. " Functions", "Game-specific features")
-        gameFunctionsButton.Position = UDim2.new(0, 10, 0, 375); gameFunctionsButton.Size = UDim2.new(1, -20, 0, 28)
-        gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
+        if not selectedGame then
+            funcContainer.Size = UDim2.new(1, -20, 0, 0)
+            gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 130)
+            return
+        end
         
-        extraSettingsFrame.Size = UDim2.new(0, 200, 0, 420)
+        -- Update header
+        gameFuncHeader.Text = "🎮 " .. selectedGame.name
         
-        -- Game functions frame
-        gameFunctionsFrame = Instance.new("Frame")
-        gameFunctionsFrame.Size = UDim2.new(0, 200, 0, 150)
-        gameFunctionsFrame.Position = UDim2.new(0, 545, 1, -440)
-        gameFunctionsFrame.BackgroundColor3 = currentTheme.background
-        gameFunctionsFrame.BorderSizePixel = 0
-        gameFunctionsFrame.Visible = false
-        gameFunctionsFrame.Parent = gui
-        Instance.new("UICorner", gameFunctionsFrame).CornerRadius = UDim.new(0, 12)
-        local gameFuncStroke = Instance.new("UIStroke", gameFunctionsFrame)
-        gameFuncStroke.Thickness = 2
-        animatedElements[gameFuncStroke] = "stroke"
-        
-        -- Header
-        local gameFuncHeader = Instance.new("TextLabel")
-        gameFuncHeader.Size = UDim2.new(1, -50, 0, 26)
-        gameFuncHeader.Position = UDim2.new(0, 12, 0, 8)
-        gameFuncHeader.BackgroundTransparency = 1
-        gameFuncHeader.Font = Enum.Font.GothamBold
-        gameFuncHeader.TextSize = 14
-        gameFuncHeader.TextXAlignment = Enum.TextXAlignment.Left
-        gameFuncHeader.TextColor3 = currentTheme.text
-        gameFuncHeader.Text = "🎮 " .. currentGameFunctions.name
-        gameFuncHeader.Parent = gameFunctionsFrame
-        
-        -- Close button
-        gameFunctionsCloseButton = Instance.new("TextButton")
-        gameFunctionsCloseButton.Size = UDim2.new(0, 24, 0, 24)
-        gameFunctionsCloseButton.Position = UDim2.new(1, -32, 0, 8)
-        gameFunctionsCloseButton.BackgroundColor3 = currentTheme.secondary
-        gameFunctionsCloseButton.Font = Enum.Font.GothamBold
-        gameFunctionsCloseButton.TextSize = 14
-        gameFunctionsCloseButton.TextColor3 = Color3.new(1, 1, 1)
-        gameFunctionsCloseButton.Text = "×"
-        gameFunctionsCloseButton.BorderSizePixel = 0
-        gameFunctionsCloseButton.Parent = gameFunctionsFrame
-        Instance.new("UICorner", gameFunctionsCloseButton).CornerRadius = UDim.new(0, 6)
-        
-        -- Create buttons for each function
-        local funcY = 40
-        for i, func in ipairs(currentGameFunctions.functions) do
-            gameFunctionStates[func.name] = false -- Default off
+        -- Create function buttons
+        local funcY = 0
+        for i, func in ipairs(selectedGame.functions) do
+            gameFunctionStates[func.name] = gameFunctionStates[func.name] or false
             
-            local funcBtn = createButton(gameFunctionsFrame, funcY, func.name .. ": OFF", func.description)
-            funcBtn.Position = UDim2.new(0, 10, 0, funcY)
-            funcBtn.Size = UDim2.new(1, -20, 0, 28)
+            local funcBtn = Instance.new("TextButton")
+            funcBtn.Size = UDim2.new(1, 0, 0, 28)
+            funcBtn.Position = UDim2.new(0, 0, 0, funcY)
+            funcBtn.BackgroundColor3 = currentTheme.secondary
+            funcBtn.BorderSizePixel = 0
+            funcBtn.Font = Enum.Font.GothamMedium
+            funcBtn.TextSize = 11
+            funcBtn.TextColor3 = Color3.new(1, 1, 1)
+            funcBtn.Text = func.name .. ": " .. (gameFunctionStates[func.name] and "ON" or "OFF")
+            funcBtn.Parent = funcContainer
+            Instance.new("UICorner", funcBtn).CornerRadius = UDim.new(0, 6)
+            
             gameFunctionButtons[func.name] = funcBtn
+            
+            connect(funcBtn.MouseButton1Click, function()
+                playClickSound()
+                gameFunctionStates[func.name] = not gameFunctionStates[func.name]
+                funcBtn.Text = func.name .. ": " .. (gameFunctionStates[func.name] and "ON" or "OFF")
+            end)
             
             funcY = funcY + 32
         end
         
-        -- Adjust frame height based on number of functions
-        gameFunctionsFrame.Size = UDim2.new(0, 200, 0, funcY + 15)
+        funcContainer.Size = UDim2.new(1, -20, 0, funcY)
+        gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 95 + funcY + 15)
     end
+    
+    -- Function to update autofill list
+    local function updateAutofillList(text)
+        -- Clear old items
+        for _, child in ipairs(gameSelectList:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+        
+        if text == "" then
+            -- Show all games
+            local matches = getGameNames()
+            local height = math.min(#matches * 24, 96)
+            gameSelectList.Size = UDim2.new(1, -20, 0, height)
+            gameSelectList.Visible = #matches > 0
+            
+            for i, name in ipairs(matches) do
+                local item = Instance.new("TextButton")
+                item.Size = UDim2.new(1, 0, 0, 24)
+                item.BackgroundColor3 = currentTheme.secondary
+                item.BackgroundTransparency = 0.3
+                item.BorderSizePixel = 0
+                item.Font = Enum.Font.GothamMedium
+                item.TextSize = 11
+                item.TextColor3 = Color3.new(1, 1, 1)
+                item.Text = name
+                item.LayoutOrder = i
+                item.Parent = gameSelectList
+                
+                connect(item.MouseButton1Click, function()
+                    playClickSound()
+                    gameSelectInput.Text = name
+                    selectedGame = findGameByName(name)
+                    gameSelectList.Visible = false
+                    rebuildGameFunctions()
+                end)
+            end
+        else
+            -- Show matching games
+            local matches = findMatchingGames(text)
+            local height = math.min(#matches * 24, 96)
+            gameSelectList.Size = UDim2.new(1, -20, 0, height)
+            gameSelectList.Visible = #matches > 0
+            
+            for i, name in ipairs(matches) do
+                local item = Instance.new("TextButton")
+                item.Size = UDim2.new(1, 0, 0, 24)
+                item.BackgroundColor3 = currentTheme.secondary
+                item.BackgroundTransparency = 0.3
+                item.BorderSizePixel = 0
+                item.Font = Enum.Font.GothamMedium
+                item.TextSize = 11
+                item.TextColor3 = Color3.new(1, 1, 1)
+                item.Text = name
+                item.LayoutOrder = i
+                item.Parent = gameSelectList
+                
+                connect(item.MouseButton1Click, function()
+                    playClickSound()
+                    gameSelectInput.Text = name
+                    selectedGame = findGameByName(name)
+                    gameSelectList.Visible = false
+                    rebuildGameFunctions()
+                end)
+            end
+        end
+    end
+    
+    -- Input events
+    connect(gameSelectInput.Focused, function()
+        updateAutofillList(gameSelectInput.Text)
+    end)
+    
+    connect(gameSelectInput:GetPropertyChangedSignal("Text"), function()
+        updateAutofillList(gameSelectInput.Text)
+    end)
+    
+    connect(gameSelectInput.FocusLost, function(enterPressed)
+        task.delay(0.1, function() -- Small delay to allow clicking on list items
+            if not gameSelectInput:IsFocused() then
+                gameSelectList.Visible = false
+            end
+        end)
+        
+        if enterPressed then
+            local game = findGameByName(gameSelectInput.Text)
+            if game then
+                selectedGame = game
+                rebuildGameFunctions()
+            end
+        end
+    end)
 
     -- EVENTS
     connect(openBtn.MouseButton1Click, function() playClickSound(); mainFrame.Visible = true; openBtn.Visible = false end)
@@ -2195,32 +2400,14 @@ local function buildGui()
     connect(extraSettingsCloseButton.MouseButton1Click, function() playClickSound(); extraSettingsFrame.Visible = false end)
     
     -- Game functions button events
-    if gameFunctionsButton then
-        connect(gameFunctionsButton.MouseButton1Click, function() 
-            playClickSound()
-            gameFunctionsFrame.Visible = not gameFunctionsFrame.Visible 
-        end)
-    end
-    if gameFunctionsCloseButton then
-        connect(gameFunctionsCloseButton.MouseButton1Click, function() 
-            playClickSound()
-            gameFunctionsFrame.Visible = false 
-        end)
-    end
-    
-    -- Game function toggle events
-    if currentGameFunctions then
-        for i, func in ipairs(currentGameFunctions.functions) do
-            local btn = gameFunctionButtons[func.name]
-            if btn then
-                connect(btn.MouseButton1Click, function()
-                    playClickSound()
-                    gameFunctionStates[func.name] = not gameFunctionStates[func.name]
-                    btn.Text = func.name .. ": " .. (gameFunctionStates[func.name] and "ON" or "OFF")
-                end)
-            end
-        end
-    end
+    connect(gameFunctionsButton.MouseButton1Click, function() 
+        playClickSound()
+        gameFunctionsFrame.Visible = not gameFunctionsFrame.Visible 
+    end)
+    connect(gameFunctionsCloseButton.MouseButton1Click, function() 
+        playClickSound()
+        gameFunctionsFrame.Visible = false 
+    end)
 
     connect(saveButton.MouseButton1Click, function()
         playClickSound()
@@ -2521,10 +2708,10 @@ connect(UserInputService.InputBegan, function(input, gpe)
     end
     
     -- Game-specific function triggers
-    if currentGameFunctions and lockedOn and currentTarget then
+    if selectedGame and lockedOn and currentTarget then
         -- JJS Nanami Perfect Special (R key)
         if kc == Enum.KeyCode.R then
-            for i, func in ipairs(currentGameFunctions.functions) do
+            for i, func in ipairs(selectedGame.functions) do
                 if func.name == "Nanami Perfect Special" and gameFunctionStates[func.name] then
                     func.execute(currentTarget)
                 end
