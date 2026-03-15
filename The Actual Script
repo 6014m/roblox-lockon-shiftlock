@@ -261,14 +261,16 @@ end
 local ShiftLockModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/ShiftLockModule.lua")
 local TargetingModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTargetingModule.lua")
 local VisualModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnVisualModule.lua")
-local LockCamToggleModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockCamToggleModule.lua")
 
 local shiftLock = ShiftLockModule and ShiftLockModule.new(localPlayer)
 local friendlies = {}
 local targeting = TargetingModule and TargetingModule.new(localPlayer, camera)
 if targeting then targeting:SetFriendliesTable(friendlies) end
 local visuals = VisualModule and VisualModule.new(localPlayer)
-local lockCamToggle = LockCamToggleModule and LockCamToggleModule.new(ScriptData)
+local lockCamToggleEnabled = false
+local lockCamToggleActive = false
+local lockCamToggleMode = "Hold"
+local lockCamToggleKeybind = Enum.KeyCode.F
 
 --==================================================
 -- ANIMATED THEMES
@@ -667,9 +669,9 @@ local function saveSettings()
             kb_ReverseLock = keybinds.ReverseLock.Name,
             kb_ShiftLock = keybinds.ShiftLock.Name,
             kb_LockOnPlus = keybinds.LockOnPlus.Name,
-            lockCamToggleEnabled = lockCamToggle and lockCamToggle.enabled or false,
-            lockCamToggleMode = lockCamToggle and lockCamToggle.mode or "Hold",
-            kb_LockCamToggle = lockCamToggle and lockCamToggle.keybind.Name or "F",
+            lockCamToggleEnabled = lockCamToggleEnabled,
+            lockCamToggleMode = lockCamToggleMode,
+            kb_LockCamToggle = lockCamToggleKeybind.Name,
         }
         if writefile then
             writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
@@ -728,7 +730,9 @@ local function applySettingsData(data)
     if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
     if data.kb_ShiftLock and Enum.KeyCode[data.kb_ShiftLock] then keybinds.ShiftLock = Enum.KeyCode[data.kb_ShiftLock] end
     if data.kb_LockOnPlus and Enum.KeyCode[data.kb_LockOnPlus] then keybinds.LockOnPlus = Enum.KeyCode[data.kb_LockOnPlus] end
-    if lockCamToggle then pcall(function() lockCamToggle:LoadSaveData(data) end) end
+    if data.lockCamToggleEnabled ~= nil then lockCamToggleEnabled = (data.lockCamToggleEnabled == true) end
+    if data.lockCamToggleMode == "Hold" or data.lockCamToggleMode == "Toggle" then lockCamToggleMode = data.lockCamToggleMode end
+    if data.kb_LockCamToggle and Enum.KeyCode[data.kb_LockCamToggle] then lockCamToggleKeybind = Enum.KeyCode[data.kb_LockCamToggle] end
     
     -- Old formats
     if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
@@ -943,7 +947,9 @@ local function applyThemeToUI()
                 b.TextColor3 = t.text
             end
         end
-        if lockCamToggle then pcall(function() lockCamToggle:ApplyTheme(t) end) end
+        for _, lb in ipairs({lockCamToggleBtn, lockCamToggleModeBtn, lockCamToggleKeyBtn}) do
+            if lb and lb.Parent then lb.BackgroundColor3 = t.secondary; lb.TextColor3 = t.text end
+        end
         
         if openBtn and openBtn.Parent then
             openBtn.BackgroundColor3 = t.secondary
@@ -1088,7 +1094,7 @@ local function unlockCamera(manual)
     end
     
     lockedOn, currentTarget, currentTargetType = false, nil, "player"
-    if lockCamToggle then pcall(function() lockCamToggle:OnUnlock() end) end
+    lockCamToggleActive = false
     pcall(function() camera.CameraType = prevCameraType end)
     invisibleTime = 0
     autoRelockPending = not manual and autoRelockEnabled
@@ -1285,7 +1291,7 @@ local lastPlayerLookDir = nil -- Track where player is trying to look for mouse 
 -- Only overrides ROTATION to look at target, keeps game's camera POSITION
 local function forceCameraUpdate()
     if not forceCameraMode or not lockedOn or not currentTarget then return end
-    if lockCamToggle and lockCamToggle:IsActive() then return end
+    if lockCamToggleEnabled and lockCamToggleActive then return end
     
     local cam = workspace.CurrentCamera
     if not cam then return end
@@ -1461,7 +1467,7 @@ local function updateCamera(dt)
     end
 
     -- LockCamToggle: stay locked but free camera
-    if lockCamToggle and lockCamToggle:IsActive() then
+    if lockCamToggleEnabled and lockCamToggleActive then
         lastTargetPos = targetRoot.Position
         refreshVisuals()
         return
@@ -2680,8 +2686,8 @@ end
 
 connect(UserInputService.InputBegan, function(input, gpe)
     if waitingForKeybind and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
-        if waitingForKeybind == "_LockCamToggle" and lockCamToggle then
-            lockCamToggle:SetKeybind(input.KeyCode)
+        if waitingForKeybind == "_LockCamToggle" then
+            lockCamToggleKeybind = input.KeyCode
             waitingForKeybind = nil
             refreshAllUI()
             return
@@ -2710,7 +2716,10 @@ connect(UserInputService.InputBegan, function(input, gpe)
     -- These only work when NOT typing
     if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
     if kc == keybinds.LockOnPlus and lockOnPlusEnabled then lockOnPlusHeld = true end
-    if lockCamToggle then lockCamToggle:OnInputBegan(kc) end
+    if kc == lockCamToggleKeybind and lockCamToggleEnabled then
+        if lockCamToggleMode == "Hold" then lockCamToggleActive = true
+        else lockCamToggleActive = not lockCamToggleActive end
+    end
     
     if kc == keybinds.LockOn then
         if lockedOn then 
@@ -2759,7 +2768,7 @@ end)
 connect(UserInputService.InputEnded, function(input)
     if input.UserInputType == Enum.UserInputType.Keyboard then
         if input.KeyCode == keybinds.ReverseLock then reverseLockHeld = false end
-        if lockCamToggle then lockCamToggle:OnInputEnded(input.KeyCode) end
+        if input.KeyCode == lockCamToggleKeybind and lockCamToggleEnabled and lockCamToggleMode == "Hold" then lockCamToggleActive = false end
         if input.KeyCode == keybinds.LockOnPlus then 
             lockOnPlusHeld = false
             -- Re-enable AutoRotate when released
