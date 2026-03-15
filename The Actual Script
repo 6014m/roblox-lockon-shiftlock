@@ -1473,6 +1473,10 @@ local function updateCamera(dt)
     -- LockCamToggle: stay locked but free camera
     if lockCamToggleEnabled and lockCamToggleActive then
         lastTargetPos = targetRoot.Position
+        pcall(function()
+            if cam.CameraSubject ~= myHum then cam.CameraSubject = myHum end
+            cam.CameraType = Enum.CameraType.Custom
+        end)
         refreshVisuals()
         return
     end
