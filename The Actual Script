@@ -1011,20 +1011,22 @@ end
 
 local function syncTeamFriendlies()
     if not teamsModeEnabled then return end
-    local myTeam = localPlayer.Team
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= localPlayer then
-            if myTeam and plr.Team == myTeam then
-                friendlies[plr.UserId] = true
-            else
-                friendlies[plr.UserId] = nil
+    pcall(function()
+        local myTeam = localPlayer.Team
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= localPlayer then
+                if myTeam and plr.Team == myTeam then
+                    friendlies[plr.UserId] = true
+                else
+                    friendlies[plr.UserId] = nil
+                end
             end
         end
-    end
-    if currentTarget and friendlies[currentTarget.UserId] then
-        lockedOn, currentTarget = false, nil
-    end
-    pcall(function() rebuildFriendsList() end)
+        if currentTarget and friendlies[currentTarget.UserId] then
+            lockedOn, currentTarget = false, nil
+        end
+        pcall(function() rebuildFriendsList() end)
+    end)
 end
 
 local function stopTeamsMode()
@@ -1042,24 +1044,30 @@ local function startTeamsMode()
     stopTeamsMode()
     syncTeamFriendlies()
 
-    teamsModeConnection = connect(localPlayer:GetPropertyChangedSignal("Team"), function()
-        syncTeamFriendlies()
+    pcall(function()
+        teamsModeConnection = connect(localPlayer:GetPropertyChangedSignal("Team"), function()
+            syncTeamFriendlies()
+        end)
     end)
 
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= localPlayer then
-            local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
-                syncTeamFriendlies()
+            pcall(function()
+                local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
+                    syncTeamFriendlies()
+                end)
+                table.insert(teamsPlayerConnections, conn)
             end)
-            table.insert(teamsPlayerConnections, conn)
         end
     end
 
     local addConn = connect(Players.PlayerAdded, function(plr)
-        local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
-            syncTeamFriendlies()
+        pcall(function()
+            local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
+                syncTeamFriendlies()
+            end)
+            table.insert(teamsPlayerConnections, conn)
         end)
-        table.insert(teamsPlayerConnections, conn)
         syncTeamFriendlies()
     end)
     table.insert(teamsPlayerConnections, addConn)
