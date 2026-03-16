@@ -76,8 +76,16 @@ local teamsModeConnection = nil
 local teamsPlayerConnections = {}
 local S = nil -- shared state reference
 
+local function isTeamsModeEnabled()
+    return S and S.getTeamsMode and S.getTeamsMode() or false
+end
+
+local function setTeamsModeEnabled(v)
+    if S and S.setTeamsMode then S.setTeamsMode(v) end
+end
+
 local function syncTeamFriendlies()
-    if not S or not S.teamsModeEnabled then return end
+    if not S or not isTeamsModeEnabled() then return end
     pcall(function()
         local lp = S.localPlayer
         local myTeam = lp.Team
@@ -131,8 +139,8 @@ end
 
 function module.toggleTeamsMode()
     if not S then return end
-    S.teamsModeEnabled = not S.teamsModeEnabled
-    if S.teamsModeEnabled then module.startTeamsMode() else module.stopTeamsMode() end
+    setTeamsModeEnabled(not isTeamsModeEnabled())
+    if isTeamsModeEnabled() then module.startTeamsMode() else module.stopTeamsMode() end
     S.refreshAllUI()
 end
 

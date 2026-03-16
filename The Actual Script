@@ -2051,6 +2051,8 @@ local function buildGui()
             setLockCamToggleMode = function(v) lockCamToggleMode = v end,
             setLockCamToggleActive = function(v) lockCamToggleActive = v end,
             setWaitingForKeybind = function(v) waitingForKeybind = v end,
+            getTeamsMode = function() return teamsModeEnabled end,
+            setTeamsMode = function(v) teamsModeEnabled = v end,
         })
         extraSettingsFrame = esUI.extraSettingsFrame
         extraSettingsCloseButton = esUI.extraSettingsCloseButton
