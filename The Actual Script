@@ -409,13 +409,16 @@ local tooltipsEnabled, tooltipLabel, currentHover = false, nil, nil
 local function setupTooltip(gui)
     tooltipLabel = Instance.new("TextLabel")
     tooltipLabel.Name = "Tooltip"
-    tooltipLabel.AutomaticSize = Enum.AutomaticSize.XY
+    tooltipLabel.Size = UDim2.new(0, 260, 0, 0)
+    tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
     tooltipLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     tooltipLabel.BackgroundTransparency = 0.1
     tooltipLabel.BorderSizePixel = 0
     tooltipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     tooltipLabel.Font = Enum.Font.Gotham
     tooltipLabel.TextSize = 11
+    tooltipLabel.TextWrapped = true
+    tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
     tooltipLabel.Visible = false
     tooltipLabel.ZIndex = 9999
     tooltipLabel.Parent = gui
@@ -1849,7 +1852,7 @@ local function buildGui()
     infoToggleButton.BorderSizePixel = 0
     infoToggleButton.Parent = mainFrame
     Instance.new("UICorner", infoToggleButton).CornerRadius = UDim.new(0, 8)
-    addTooltip(infoToggleButton, "Toggle tooltips")
+    addTooltip(infoToggleButton, "Toggle detailed tooltips on/off. Hover over any setting to see what it does.")
 
     extraSettingsButton = Instance.new("TextButton")
     extraSettingsButton.Size = UDim2.new(0, 70, 0, 24)
@@ -1942,12 +1945,12 @@ local function buildGui()
     targetPage.Parent = mainFrame
 
     -- MAIN PAGE
-    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Auto-swap on death")
-    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "Target closest")
-    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Swap if hidden")
-    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skip dead targets")
-    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "Re-lock auto")
-    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Front only")
+    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Automatically switches to the nearest valid target when your current target dies, resets, or leaves the game.")
+    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "When swapping targets, always picks the closest player to you instead of cycling through all available targets.")
+    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Checks if your target is behind a wall. If hidden for too long, auto-swaps to a visible target using raycasting.")
+    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skips targets that are dead (0 HP) or have a ForceField active (spawn protection). Prevents locking onto invulnerable players.")
+    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "After your target dies or becomes invalid, automatically locks onto the next closest target without pressing the lock-on key again.")
+    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Only allows locking onto targets in front of your character (~120 degree cone). Prevents sudden 180-degree camera snaps.")
 
     heightLabel = Instance.new("TextLabel")
     heightLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2003,9 +2006,9 @@ local function buildGui()
     Instance.new("UICorner", rangeInput).CornerRadius = UDim.new(0, 6)
 
     -- VISUAL PAGE
-    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Glow target")
-    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Highlight #2")
-    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Fade self")
+    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Adds a glowing highlight around your locked target, making them easier to see through particles and dark environments.")
+    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Also highlights the second-closest target with a dimmer glow so you can see who you'll swap to next.")
+    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Makes your own character semi-transparent while locked on. Reduces visual obstruction in third-person.")
 
     local themeLabel = Instance.new("TextLabel")
     themeLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2038,7 +2041,7 @@ local function buildGui()
     end
 
     local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
-    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Override all shiftlocks")
+    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Replaces the default Roblox shift lock with a custom one. Your character always faces the camera direction. Works in games that disable built-in shift lock.")
     
     -- Shiftlock key with On/Off toggle
     shiftlockKeyButton = Instance.new("TextButton")
@@ -2052,7 +2055,7 @@ local function buildGui()
     shiftlockKeyButton.BackgroundColor3 = currentTheme.secondary
     shiftlockKeyButton.Parent = visualPage
     Instance.new("UICorner", shiftlockKeyButton).CornerRadius = UDim.new(0, 6)
-    addTooltip(shiftlockKeyButton, "Change key")
+    addTooltip(shiftlockKeyButton, "Click then press any key to change the shiftlock keybind. Default: LeftShift.")
     
     shiftlockKeyToggleButton = Instance.new("TextButton")
     shiftlockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
@@ -2065,9 +2068,9 @@ local function buildGui()
     shiftlockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
     shiftlockKeyToggleButton.Parent = visualPage
     Instance.new("UICorner", shiftlockKeyToggleButton).CornerRadius = UDim.new(0, 6)
-    addTooltip(shiftlockKeyToggleButton, "Enable/disable keybind")
+    addTooltip(shiftlockKeyToggleButton, "Enable or disable the shiftlock keyboard shortcut. When off, you can still toggle shiftlock through the UI button.")
     
-    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Enable on load")
+    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Automatically enables custom shiftlock when the script loads, without needing to press the key.")
     
     visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 100)
 
@@ -2083,10 +2086,10 @@ local function buildGui()
     keysLabel.Text = "⌨ Keybinds:"
     keysLabel.Parent = targetPage
 
-    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Toggle lock")
-    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Next target")
+    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Press to lock onto the nearest target, press again to unlock. Click this button then press any key to rebind.")
+    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Cycles to the next closest valid target while locked on. Click to rebind.")
 
-    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Cursor target")
+    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Locks onto the player closest to your mouse cursor instead of closest to your character. Better for picking specific targets in groups.")
 
     local friendsLabel = Instance.new("TextLabel")
     friendsLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2156,26 +2159,26 @@ local function buildGui()
     extraScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 460)
     extraScrollFrame.Parent = extraSettingsFrame
 
-    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", "Face away")
+    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", "Flips the camera 180 degrees so you face AWAY from your target. Useful for retreating while keeping track of an enemy.")
     reverseLockButton.Position = UDim2.new(0, 5, 0, 0); reverseLockButton.Size = UDim2.new(1, -10, 0, 28)
 
-    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", "Hold reverse")
+    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", "Hold this key to temporarily activate reverse lock. Releasing snaps back to normal. Click to rebind.")
     reverseKeyButton.Position = UDim2.new(0, 5, 0, 32); reverseKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
-    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", "Aim offset")
+    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", "Offsets your aim slightly to the side of the target for a more cinematic angle and better visibility in close-range.")
     perfectOffsetButton.Position = UDim2.new(0, 5, 0, 64); perfectOffsetButton.Size = UDim2.new(1, -10, 0, 28)
 
-    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", "Target NPCs")
+    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", "Allows locking onto NPCs (non-player characters) in addition to players. Required for PvE games or boss fights.")
     npcModeButton.Position = UDim2.new(0, 5, 0, 96); npcModeButton.Size = UDim2.new(1, -10, 0, 28)
 
-    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", "Aim ahead")
+    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", "Leads your aim slightly ahead of a moving target based on their velocity. Compensates for movement so camera points where they're going.")
     predictionButton.Position = UDim2.new(0, 5, 0, 128); predictionButton.Size = UDim2.new(1, -10, 0, 28)
 
-    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", "Override game camera")
+    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", "Overrides the game's camera scripts entirely. Use in games with custom cameras that fight the lock-on. May cause jitter in some games.")
     forceCameraButton.Position = UDim2.new(0, 5, 0, 160); forceCameraButton.Size = UDim2.new(1, -10, 0, 28)
 
     -- Mouse Resistance toggle and slider
-    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", "Allow pulling away")
+    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", "Controls how much the camera resists being pulled away from target. 100% = rigid lock, 0% = full mouse freedom, negative = pushes away.")
     mouseResistanceButton.Position = UDim2.new(0, 5, 0, 192); mouseResistanceButton.Size = UDim2.new(1, -10, 0, 28)
     
     mouseResistanceLabel = Instance.new("TextLabel")
@@ -2208,18 +2211,18 @@ local function buildGui()
     Instance.new("UICorner", mouseResistanceSliderKnob).CornerRadius = UDim.new(1, 0)
     
     -- LockOn+ toggle and keybind
-    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", "Rotate body to target")
+    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", "Rotates your character's body to face the locked target while your camera stays free. Useful in fighting games where attacks need to face the opponent.")
     lockOnPlusButton.Position = UDim2.new(0, 5, 0, 260); lockOnPlusButton.Size = UDim2.new(1, -10, 0, 28)
-    
-    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", "Hold to activate")
+
+    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", "Hold this key to activate body rotation toward target. Release to return to normal movement. Click to rebind.")
     lockOnPlusKeyButton.Position = UDim2.new(0, 5, 0, 292); lockOnPlusKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
     -- LockCamToggle
-    lockCamToggleBtn = createButton(extraScrollFrame, 324, "LockCamToggle: OFF", "Lock target without forcing camera")
+    lockCamToggleBtn = createButton(extraScrollFrame, 324, "LockCamToggle: OFF", "Keeps your target selected but does NOT force your camera to follow them. Look around freely while still having a target locked.")
     lockCamToggleBtn.Position = UDim2.new(0, 5, 0, 324); lockCamToggleBtn.Size = UDim2.new(1, -10, 0, 28)
-    lockCamToggleModeBtn = createButton(extraScrollFrame, 356, "Mode: Hold", "Hold or Toggle")
+    lockCamToggleModeBtn = createButton(extraScrollFrame, 356, "Mode: Hold", "Hold: only active while key is held. Toggle: press once to activate, press again to deactivate.")
     lockCamToggleModeBtn.Position = UDim2.new(0, 5, 0, 356); lockCamToggleModeBtn.Size = UDim2.new(1, -10, 0, 28)
-    lockCamToggleKeyBtn = createButton(extraScrollFrame, 388, "LockCam Key: F", "Set keybind")
+    lockCamToggleKeyBtn = createButton(extraScrollFrame, 388, "LockCam Key: F", "The key for LockCamToggle. Click to rebind. Default: F.")
     lockCamToggleKeyBtn.Position = UDim2.new(0, 5, 0, 388); lockCamToggleKeyBtn.Size = UDim2.new(1, -10, 0, 28)
     connect(lockCamToggleBtn.MouseButton1Click, function() playClickSound(); lockCamToggleEnabled = not lockCamToggleEnabled; if not lockCamToggleEnabled then lockCamToggleActive = false end; refreshAllUI() end)
     connect(lockCamToggleModeBtn.MouseButton1Click, function() playClickSound(); lockCamToggleMode = lockCamToggleMode == "Hold" and "Toggle" or "Hold"; lockCamToggleActive = false; refreshAllUI() end)
@@ -2227,7 +2230,7 @@ local function buildGui()
 
     -- GAME-SPECIFIC FUNCTIONS - Always show selector
     -- Game selector button
-    gameFunctionsButton = createButton(extraScrollFrame, 420, "🎮 Game Functions", "Select game for special features")
+    gameFunctionsButton = createButton(extraScrollFrame, 420, "🎮 Game Functions", "Opens game-specific functions panel. Some games have special features like auto-timing abilities. Select your game from the dropdown.")
     gameFunctionsButton.Position = UDim2.new(0, 5, 0, 420); gameFunctionsButton.Size = UDim2.new(1, -10, 0, 28)
     gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
 
