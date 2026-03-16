@@ -514,11 +514,6 @@ local mouseResistanceScale = 0.5 -- -1 to 1: negative = more freedom, positive =
 local lockOnPlusEnabled = false -- LockOn+: rotate character to face target while camera is free
 local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 
--- Teams mode - auto-friendly/unfriendly based on team
-local teamsModeEnabled = false
-local teamsModeConnection = nil
-local teamsPlayerConnections = {}
-
 --==================================================
 -- GAME-SPECIFIC FUNCTIONS
 --==================================================
@@ -624,7 +619,7 @@ local highlightButton, highlightSecondButton, selfFadeButton
 local autoswapButton, closeSwapButton, checkVisibilityButton, checkHealthButton
 local autoRelockButton, realisticButton, centerShiftlockButton
 local lockOnKeyButton, swapKeyButton
-local mouseTargetButton, friendsList, teamsModeButton
+local mouseTargetButton, friendsList
 local heightLabel, heightSliderBar, heightSliderKnob, rangeInput
 local extraSettingsFrame, extraSettingsButton, extraSettingsCloseButton
 local reverseLockButton, reverseKeyButton, perfectOffsetButton
@@ -681,7 +676,6 @@ local function saveSettings()
             lockCamToggleEnabled = lockCamToggleEnabled,
             lockCamToggleMode = lockCamToggleMode,
             kb_LockCamToggle = lockCamToggleKeybind.Name,
-            teamsModeEnabled = teamsModeEnabled,
         }
         if writefile then
             writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
@@ -729,8 +723,7 @@ local function applySettingsData(data)
     shiftlockKeyEnabled = (data.shiftlockKeyEnabled ~= false)
     mouseResistanceEnabled = (data.mouseResistanceEnabled == true)
     lockOnPlusEnabled = (data.lockOnPlusEnabled == true)
-    teamsModeEnabled = (data.teamsModeEnabled == true)
-
+    
     rangeLimit = tonumber(data.rangeLimit) or 0
     lockHeightOffset = tonumber(data.lockHeightOffset) or 0
     mouseResistanceScale = tonumber(data.mouseResistanceScale) or 0.3
@@ -931,7 +924,6 @@ local function refreshAllUI()
             heightSliderKnob.Position = UDim2.new((lockHeightOffset - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN), 0, 0.5, 0) 
         end
         if rangeInput then rangeInput.Text = tostring(rangeLimit) end
-        if teamsModeButton then teamsModeButton.Text = "Teams Mode: " .. (teamsModeEnabled and "ON" or "OFF") end
     end)
 end
 
@@ -953,7 +945,7 @@ local function applyThemeToUI()
             reverseLockButton, reverseKeyButton, perfectOffsetButton,
             npcModeButton, predictionButton, forceCameraButton, mouseResistanceButton, lockOnPlusButton, lockOnPlusKeyButton, 
             shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton,
-            teamsModeButton, saveButton, loadButton
+            saveButton, loadButton
         }
         
         for _, b in ipairs(btns) do
@@ -1003,89 +995,6 @@ local function setTheme(name)
         applyThemeToUI()
         rebuildFriendsList()
     end
-end
-
---==================================================
--- TEAMS MODE
---==================================================
-
-local function syncTeamFriendlies()
-    if not teamsModeEnabled then return end
-    pcall(function()
-        local myTeam = localPlayer.Team
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= localPlayer then
-                if myTeam and plr.Team == myTeam then
-                    friendlies[plr.UserId] = true
-                else
-                    friendlies[plr.UserId] = nil
-                end
-            end
-        end
-        if currentTarget and friendlies[currentTarget.UserId] then
-            lockedOn, currentTarget = false, nil
-        end
-        pcall(function() rebuildFriendsList() end)
-    end)
-end
-
-local function stopTeamsMode()
-    if teamsModeConnection then
-        pcall(function() teamsModeConnection:Disconnect() end)
-        teamsModeConnection = nil
-    end
-    for _, conn in ipairs(teamsPlayerConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    teamsPlayerConnections = {}
-end
-
-local function startTeamsMode()
-    stopTeamsMode()
-    syncTeamFriendlies()
-
-    pcall(function()
-        teamsModeConnection = connect(localPlayer:GetPropertyChangedSignal("Team"), function()
-            syncTeamFriendlies()
-        end)
-    end)
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= localPlayer then
-            pcall(function()
-                local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
-                    syncTeamFriendlies()
-                end)
-                table.insert(teamsPlayerConnections, conn)
-            end)
-        end
-    end
-
-    local addConn = connect(Players.PlayerAdded, function(plr)
-        pcall(function()
-            local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
-                syncTeamFriendlies()
-            end)
-            table.insert(teamsPlayerConnections, conn)
-        end)
-        syncTeamFriendlies()
-    end)
-    table.insert(teamsPlayerConnections, addConn)
-
-    local removeConn = connect(Players.PlayerRemoving, function()
-        syncTeamFriendlies()
-    end)
-    table.insert(teamsPlayerConnections, removeConn)
-end
-
-local function toggleTeamsMode()
-    teamsModeEnabled = not teamsModeEnabled
-    if teamsModeEnabled then
-        startTeamsMode()
-    else
-        stopTeamsMode()
-    end
-    refreshAllUI()
 end
 
 --==================================================
@@ -1185,7 +1094,6 @@ local function fullCleanup()
     pcall(function() if shiftLock then shiftLock:Destroy() end end)
     pcall(function() if visuals then visuals:Destroy() end end)
     pcall(function() if npcHighlight then npcHighlight:Destroy() end end)
-    pcall(function() stopTeamsMode() end)
     for id in pairs(friendlies) do friendlies[id] = nil end
     pcall(function() if gui then gui:Destroy() end end)
     animatedElements = {}
@@ -2183,11 +2091,9 @@ local function buildGui()
 
     mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Locks onto the player closest to your mouse cursor instead of closest to your character. Better for picking specific targets in groups.")
 
-    teamsModeButton = createButton(targetPage, 120, "Teams Mode: OFF", "Auto friendly/unfriendly players based on your team. Constantly updates when players join, leave, or switch teams.")
-
     local friendsLabel = Instance.new("TextLabel")
     friendsLabel.Size = UDim2.new(1, -10, 0, 20)
-    friendsLabel.Position = UDim2.new(0, 0, 0, 156)
+    friendsLabel.Position = UDim2.new(0, 0, 0, 124)
     friendsLabel.BackgroundTransparency = 1
     friendsLabel.Font = Enum.Font.GothamBold
     friendsLabel.TextSize = 11
@@ -2198,7 +2104,7 @@ local function buildGui()
 
     friendsList = Instance.new("ScrollingFrame")
     friendsList.Size = UDim2.new(1, -10, 0, 130)
-    friendsList.Position = UDim2.new(0, 0, 0, 178)
+    friendsList.Position = UDim2.new(0, 0, 0, 146)
     friendsList.BackgroundColor3 = currentTheme.secondary
     friendsList.BorderSizePixel = 0
     friendsList.ScrollBarThickness = 4
@@ -2651,7 +2557,6 @@ local function buildGui()
     end)
 
     connect(mouseTargetButton.MouseButton1Click, function() playClickSound(); mouseTargetMode = not mouseTargetMode; refreshAllUI() end)
-    connect(teamsModeButton.MouseButton1Click, function() playClickSound(); toggleTeamsMode(); rebuildFriendsList() end)
 
 
     connect(lockOnKeyButton.MouseButton1Click, function() playClickSound(); waitingForKeybind = "LockOn"; lockOnKeyButton.Text = "..." end)
@@ -2721,8 +2626,6 @@ local function buildGui()
     applyThemeToUI()
     rebuildFriendsList()
     syncTargetingOptions()
-
-    if teamsModeEnabled then startTeamsMode() end
 
     local indicator = Instance.new("TextLabel")
     indicator.Size = UDim2.new(0, 160, 0, 28)
