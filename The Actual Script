@@ -261,17 +261,12 @@ end
 local ShiftLockModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/ShiftLockModule.lua")
 local TargetingModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTargetingModule.lua")
 local VisualModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnVisualModule.lua")
-local TooltipModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTooltipModule.lua")
-local GameFunctionsModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnGameFunctionsModule.lua")
-local SaveLoadModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnSaveLoadModule.lua")
 
 local shiftLock = ShiftLockModule and ShiftLockModule.new(localPlayer)
 local friendlies = {}
 local targeting = TargetingModule and TargetingModule.new(localPlayer, camera)
 if targeting then targeting:SetFriendliesTable(friendlies) end
 local visuals = VisualModule and VisualModule.new(localPlayer)
-local gameFuncs = GameFunctionsModule and GameFunctionsModule.new()
-local saveLoad = SaveLoadModule and SaveLoadModule.new()
 local lockCamToggleEnabled = false
 local lockCamToggleActive = false
 local lockCamToggleMode = "Hold"
@@ -414,16 +409,13 @@ local tooltipsEnabled, tooltipLabel, currentHover = false, nil, nil
 local function setupTooltip(gui)
     tooltipLabel = Instance.new("TextLabel")
     tooltipLabel.Name = "Tooltip"
-    tooltipLabel.Size = UDim2.new(0, 280, 0, 0)
-    tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
+    tooltipLabel.AutomaticSize = Enum.AutomaticSize.XY
     tooltipLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     tooltipLabel.BackgroundTransparency = 0.1
     tooltipLabel.BorderSizePixel = 0
     tooltipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     tooltipLabel.Font = Enum.Font.Gotham
     tooltipLabel.TextSize = 11
-    tooltipLabel.TextWrapped = true
-    tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
     tooltipLabel.Visible = false
     tooltipLabel.ZIndex = 9999
     tooltipLabel.Parent = gui
@@ -469,18 +461,9 @@ local function playClickSound()
     end)
 end
 
-local function toggleTooltips()
+local function toggleTooltips() 
     tooltipsEnabled = not tooltipsEnabled
-    if not tooltipsEnabled and tooltipLabel then tooltipLabel.Visible = false end
-end
-
--- Helper to get tooltip text from module, with fallback
-local function tip(category, key, fallback)
-    if TooltipModule then
-        local t = TooltipModule:Get(category, key)
-        if t then return t end
-    end
-    return fallback or ""
+    if not tooltipsEnabled and tooltipLabel then tooltipLabel.Visible = false end 
 end
 
 connect(RunService.RenderStepped, function()
@@ -529,30 +512,103 @@ local lockOnPlusEnabled = false -- LockOn+: rotate character to face target whil
 local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 
 --==================================================
--- GAME-SPECIFIC FUNCTIONS (via GameFunctionsModule)
+-- GAME-SPECIFIC FUNCTIONS
 --==================================================
 
--- Compatibility wrappers for inline code that references these
-local selectedGame = gameFuncs and gameFuncs:GetSelectedGame() or nil
-local gameFunctionStates = gameFuncs and gameFuncs.functionStates or {}
+-- Available games with functions (add more here)
+local AVAILABLE_GAMES = {
+    {
+        name = "JJS",
+        ids = {"3508322461"},
+        functions = {
+            {
+                name = "Nanami Perfect Special",
+                description = "Auto-time R special based on target HP (27 stud range)",
+                enabled = false,
+                execute = function(target)
+                    if not target then return end
+                    local targetChar = target.Character
+                    if not targetChar then return end
+                    
+                    -- Check distance (must be within 27 studs)
+                    local myChar = game.Players.LocalPlayer.Character
+                    if not myChar then return end
+                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+                    if not myRoot or not targetRoot then return end
+                    
+                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
+                    if distance > 27 then return end -- Too far away
+                    
+                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                    if not hum then return end
+                    
+                    local hp = hum.Health
+                    local maxHp = hum.MaxHealth
+                    local hpPercent = (hp / maxHp) * 100
+                    
+                    -- Determine wait time based on health
+                    local waitTime = 0.63 -- Default for 100-80%
+                    if hpPercent < 80 then
+                        waitTime = 0.55 -- 80-0%
+                    end
+                    
+                    task.delay(waitTime, function()
+                        pcall(function()
+                            local args = { targetChar }
+                            game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
+                        end)
+                    end)
+                end
+            }
+        }
+    },
+    -- Add more games here:
+    -- {
+    --     name = "Game Name",
+    --     ids = {"id1", "id2"},
+    --     functions = { ... }
+    -- },
+}
 
+local selectedGame = nil -- Currently selected game
+local gameFunctionStates = {} -- Track enabled/disabled state of each function
+
+-- Get list of game names for autofill
 local function getGameNames()
-    return gameFuncs and gameFuncs:GetGameNames() or {}
+    local names = {}
+    for _, game in ipairs(AVAILABLE_GAMES) do
+        table.insert(names, game.name)
+    end
+    return names
 end
 
+-- Find game by name
 local function findGameByName(name)
-    return gameFuncs and gameFuncs:FindGameByName(name) or nil
+    for _, game in ipairs(AVAILABLE_GAMES) do
+        if game.name:lower() == name:lower() then
+            return game
+        end
+    end
+    return nil
 end
 
+-- Find games matching partial name (for autofill)
 local function findMatchingGames(partial)
-    return gameFuncs and gameFuncs:FindMatchingGames(partial) or {}
+    local matches = {}
+    partial = partial:lower()
+    for _, game in ipairs(AVAILABLE_GAMES) do
+        if game.name:lower():sub(1, #partial) == partial then
+            table.insert(matches, game.name)
+        end
+    end
+    return matches
 end
 
 --==================================================
 -- UI REFERENCES
 --==================================================
 
-local guiEnv -- shared state table between main script and GuiModule
 local gui, mainFrame, openBtn, closeBtn, infoToggleButton, headerLabel
 local tabMainButton, tabVisualButton, tabTargetButton
 local mainPage, visualPage, targetPage
@@ -576,88 +632,119 @@ local themeButtons = {}
 local lockCamToggleBtn, lockCamToggleModeBtn, lockCamToggleKeyBtn
 
 --==================================================
--- SAVE/LOAD SYSTEM (via SaveLoadModule)
+-- SAVE/LOAD SYSTEM
 --==================================================
 
-local function getSettingsState()
-    return {
-        currentThemeName = currentThemeName,
-        autoSwapEnabled = autoSwapEnabled,
-        closeSwapEnabled = closeSwapEnabled,
-        visibilityCheckEnabled = visibilityCheckEnabled,
-        checkHealthEnabled = checkHealthEnabled,
-        autoRelockEnabled = autoRelockEnabled,
-        realisticEnabled = realisticEnabled,
-        rangeLimit = rangeLimit,
-        lockHeightOffset = lockHeightOffset,
-        highlightEnabled = visuals and visuals:IsHighlightEnabled() or false,
-        highlightSecondEnabled = visuals and visuals:IsHighlightSecondEnabled() or false,
-        selfFadeEnabled = visuals and visuals:IsSelfFadeEnabled() or false,
-        reverseLockEnabled = reverseLockEnabled,
-        perfectOffsetEnabled = perfectOffsetEnabled,
-        mouseTargetMode = mouseTargetMode,
-        npcModeEnabled = npcModeEnabled,
-        predictionEnabled = predictionEnabled,
-        forceCameraMode = forceCameraMode,
-        customShiftlockEnabled = customShiftlockEnabled,
-        shiftlockAutoEnable = shiftlockAutoEnable,
-        shiftlockKeyEnabled = shiftlockKeyEnabled,
-        mouseResistanceEnabled = mouseResistanceEnabled,
-        mouseResistanceScale = mouseResistanceScale,
-        lockOnPlusEnabled = lockOnPlusEnabled,
-        lockCamToggleEnabled = lockCamToggleEnabled,
-        lockCamToggleMode = lockCamToggleMode,
-        lockCamToggleKeybind = lockCamToggleKeybind,
-        keybinds = keybinds,
-    }
-end
+local SAVE_KEY = "LockOnCameraSettings_v4"
 
 local function saveSettings()
-    if not saveLoad then return false end
-    return saveLoad:Save(getSettingsState())
+    local success = pcall(function()
+        local data = {
+            theme = currentThemeName,
+            autoSwapEnabled = autoSwapEnabled,
+            autoSwapEnabled = autoSwapEnabled,
+            closeSwapEnabled = closeSwapEnabled,
+            visibilityCheckEnabled = visibilityCheckEnabled,
+            checkHealthEnabled = checkHealthEnabled,
+            autoRelockEnabled = autoRelockEnabled,
+            realisticEnabled = realisticEnabled,
+            rangeLimit = rangeLimit,
+            lockHeightOffset = lockHeightOffset,
+            highlightEnabled = visuals and visuals:IsHighlightEnabled() or false,
+            highlightSecondEnabled = visuals and visuals:IsHighlightSecondEnabled() or false,
+            selfFadeEnabled = visuals and visuals:IsSelfFadeEnabled() or false,
+            reverseLockEnabled = reverseLockEnabled,
+            perfectOffsetEnabled = perfectOffsetEnabled,
+            mouseTargetMode = mouseTargetMode,
+            npcModeEnabled = npcModeEnabled,
+            predictionEnabled = predictionEnabled,
+            forceCameraMode = forceCameraMode,
+            customShiftlockEnabled = customShiftlockEnabled,
+            shiftlockAutoEnable = shiftlockAutoEnable,
+            shiftlockKeyEnabled = shiftlockKeyEnabled,
+            mouseResistanceEnabled = mouseResistanceEnabled,
+            mouseResistanceScale = mouseResistanceScale,
+            lockOnPlusEnabled = lockOnPlusEnabled,
+            kb_LockOn = keybinds.LockOn.Name,
+            kb_SwapTarget = keybinds.SwapTarget.Name,
+            kb_ReverseLock = keybinds.ReverseLock.Name,
+            kb_ShiftLock = keybinds.ShiftLock.Name,
+            kb_LockOnPlus = keybinds.LockOnPlus.Name,
+            lockCamToggleEnabled = lockCamToggleEnabled,
+            lockCamToggleMode = lockCamToggleMode,
+            kb_LockCamToggle = lockCamToggleKeybind.Name,
+        }
+        if writefile then
+            writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
+        end
+    end)
+    return success
 end
 
 local function loadSettingsData()
-    if not saveLoad then return nil end
-    return saveLoad:Load()
+    local success, data = pcall(function()
+        if not readfile or not isfile then return nil end
+        for _, key in ipairs({SAVE_KEY, "LockOnCameraSettings_v3", "LockOnCameraSettings_v2"}) do
+            if isfile(key .. ".json") then
+                return HttpService:JSONDecode(readfile(key .. ".json"))
+            end
+        end
+        return nil
+    end)
+    return success and data or nil
 end
 
 local function applySettingsData(data)
-    if not saveLoad or not data then return false end
-
-    local state = {
-        keybinds = keybinds,
-    }
-    local success = saveLoad:Apply(data, state, THEMES)
-    if not success then return false end
-
-    -- Apply state back to locals
-    if state.currentThemeName then currentThemeName = state.currentThemeName end
-    if state.currentTheme then currentTheme = state.currentTheme end
-    autoSwapEnabled = state.autoSwapEnabled or false
-    closeSwapEnabled = state.closeSwapEnabled or false
-    visibilityCheckEnabled = state.visibilityCheckEnabled or false
-    checkHealthEnabled = state.checkHealthEnabled or false
-    autoRelockEnabled = state.autoRelockEnabled or false
-    realisticEnabled = state.realisticEnabled or false
-    reverseLockEnabled = state.reverseLockEnabled or false
-    perfectOffsetEnabled = state.perfectOffsetEnabled or false
-    mouseTargetMode = state.mouseTargetMode or false
-    npcModeEnabled = state.npcModeEnabled or false
-    predictionEnabled = state.predictionEnabled or false
-    forceCameraMode = state.forceCameraMode or false
-    customShiftlockEnabled = state.customShiftlockEnabled or false
-    shiftlockAutoEnable = state.shiftlockAutoEnable or false
-    shiftlockKeyEnabled = state.shiftlockKeyEnabled ~= false
-    mouseResistanceEnabled = state.mouseResistanceEnabled or false
-    lockOnPlusEnabled = state.lockOnPlusEnabled or false
-    rangeLimit = state.rangeLimit or 0
-    lockHeightOffset = state.lockHeightOffset or 0
-    mouseResistanceScale = state.mouseResistanceScale or 0.3
-    if state.lockCamToggleEnabled ~= nil then lockCamToggleEnabled = state.lockCamToggleEnabled end
-    if state.lockCamToggleMode then lockCamToggleMode = state.lockCamToggleMode end
-    if state.lockCamToggleKeybind then lockCamToggleKeybind = state.lockCamToggleKeybind end
-
+    if not data then return false end
+    
+    if data.theme and THEMES[data.theme] then
+        currentThemeName = data.theme
+        currentTheme = THEMES[data.theme]
+    end
+    
+    autoSwapEnabled = (data.autoSwapEnabled == true)
+    autoSwapEnabled = (data.autoSwapEnabled == true)
+    closeSwapEnabled = (data.closeSwapEnabled == true)
+    visibilityCheckEnabled = (data.visibilityCheckEnabled == true)
+    checkHealthEnabled = (data.checkHealthEnabled == true)
+    autoRelockEnabled = (data.autoRelockEnabled == true)
+    realisticEnabled = (data.realisticEnabled == true)
+    reverseLockEnabled = (data.reverseLockEnabled == true)
+    perfectOffsetEnabled = (data.perfectOffsetEnabled == true)
+    mouseTargetMode = (data.mouseTargetMode == true)
+    npcModeEnabled = (data.npcModeEnabled == true)
+    predictionEnabled = (data.predictionEnabled == true)
+    forceCameraMode = (data.forceCameraMode == true)
+    customShiftlockEnabled = (data.customShiftlockEnabled == true)
+    shiftlockAutoEnable = (data.shiftlockAutoEnable == true)
+    shiftlockKeyEnabled = (data.shiftlockKeyEnabled ~= false)
+    mouseResistanceEnabled = (data.mouseResistanceEnabled == true)
+    lockOnPlusEnabled = (data.lockOnPlusEnabled == true)
+    
+    rangeLimit = tonumber(data.rangeLimit) or 0
+    lockHeightOffset = tonumber(data.lockHeightOffset) or 0
+    mouseResistanceScale = tonumber(data.mouseResistanceScale) or 0.3
+    
+    -- New keybind format
+    if data.kb_LockOn and Enum.KeyCode[data.kb_LockOn] then keybinds.LockOn = Enum.KeyCode[data.kb_LockOn] end
+    if data.kb_SwapTarget and Enum.KeyCode[data.kb_SwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.kb_SwapTarget] end
+    if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
+    if data.kb_ShiftLock and Enum.KeyCode[data.kb_ShiftLock] then keybinds.ShiftLock = Enum.KeyCode[data.kb_ShiftLock] end
+    if data.kb_LockOnPlus and Enum.KeyCode[data.kb_LockOnPlus] then keybinds.LockOnPlus = Enum.KeyCode[data.kb_LockOnPlus] end
+    if data.lockCamToggleEnabled ~= nil then lockCamToggleEnabled = (data.lockCamToggleEnabled == true) end
+    if data.lockCamToggleMode == "Hold" or data.lockCamToggleMode == "Toggle" then lockCamToggleMode = data.lockCamToggleMode end
+    if data.kb_LockCamToggle and Enum.KeyCode[data.kb_LockCamToggle] then lockCamToggleKeybind = Enum.KeyCode[data.kb_LockCamToggle] end
+    
+    -- Old formats
+    if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
+    if data.keybindSwapTarget and Enum.KeyCode[data.keybindSwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.keybindSwapTarget] end
+    if data.keybindReverseLock and Enum.KeyCode[data.keybindReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.keybindReverseLock] end
+    if data.keybinds then
+        for k, v in pairs(data.keybinds) do
+            if Enum.KeyCode[v] then keybinds[k] = Enum.KeyCode[v] end
+        end
+    end
+    
     if visuals then
         pcall(function()
             visuals:SetHighlightEnabled(data.highlightEnabled == true)
@@ -665,7 +752,7 @@ local function applySettingsData(data)
             visuals:SetSelfFadeEnabled(data.selfFadeEnabled == true)
         end)
     end
-
+    
     return true
 end
 
@@ -944,9 +1031,7 @@ function rebuildFriendsList()
             playClickSound()
             if allFriendly then
                 for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= localPlayer then
-                        friendlies[plr.UserId] = nil
-                    end
+                    if plr ~= localPlayer then friendlies[plr.UserId] = nil end
                 end
             else
                 for _, plr in ipairs(Players:GetPlayers()) do
@@ -959,7 +1044,7 @@ function rebuildFriendsList()
             rebuildFriendsList()
         end)
 
-        local idx = 1 -- start at 1 because "All" is index 0
+        local idx = 1
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= localPlayer then
                 idx += 1
@@ -1660,219 +1745,990 @@ end)
 table.insert(allConnections, lockOnPlusStepped)
 
 --==================================================
--- BUILD GUI (via GuiModule)
+-- BUILD GUI
 --==================================================
 
+local function createButton(parent, yPos, text, tip)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -10, 0, 28)
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.Font = Enum.Font.GothamMedium
+    btn.TextSize = 12
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Text = text
+    btn.BorderSizePixel = 0
+    btn.BackgroundColor3 = currentTheme.secondary
+    btn.AutoButtonColor = false
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    
+    connect(btn.MouseEnter, function()
+        if btn.Parent then
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = currentTheme.primary1}):Play()
+        end
+    end)
+    connect(btn.MouseLeave, function()
+        if btn.Parent then
+            TweenService:Create(btn, TweenInfo.new(0.15), {BackgroundColor3 = currentTheme.secondary}):Play()
+        end
+    end)
+    
+    if tip then addTooltip(btn, tip) end
+    return btn
+end
+
 local function buildGui()
-    local GuiModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnGuiModule.lua")
-    if not GuiModule then warn("[LockOn] Failed to load GuiModule"); return end
+    local saved = loadSettingsData()
+    if saved then applySettingsData(saved) end
+    
+    -- Setup force camera hooks if enabled from saved settings
+    setupForceCameraHooks()
 
-    -- Sync env -> locals (called by refreshAllUI wrapper and after build)
-    local function syncFromEnv()
-        autoSwapEnabled = guiEnv.autoSwapEnabled
-        closeSwapEnabled = guiEnv.closeSwapEnabled
-        visibilityCheckEnabled = guiEnv.visibilityCheckEnabled
-        checkHealthEnabled = guiEnv.checkHealthEnabled
-        autoRelockEnabled = guiEnv.autoRelockEnabled
-        realisticEnabled = guiEnv.realisticEnabled
-        reverseLockEnabled = guiEnv.reverseLockEnabled
-        perfectOffsetEnabled = guiEnv.perfectOffsetEnabled
-        mouseTargetMode = guiEnv.mouseTargetMode
-        npcModeEnabled = guiEnv.npcModeEnabled
-        predictionEnabled = guiEnv.predictionEnabled
-        forceCameraMode = guiEnv.forceCameraMode
-        customShiftlockEnabled = guiEnv.customShiftlockEnabled
-        shiftlockAutoEnable = guiEnv.shiftlockAutoEnable
-        shiftlockKeyEnabled = guiEnv.shiftlockKeyEnabled
-        mouseResistanceEnabled = guiEnv.mouseResistanceEnabled
-        mouseResistanceScale = guiEnv.mouseResistanceScale
-        lockOnPlusEnabled = guiEnv.lockOnPlusEnabled
-        lockCamToggleEnabled = guiEnv.lockCamToggleEnabled
-        lockCamToggleActive = guiEnv.lockCamToggleActive
-        lockCamToggleMode = guiEnv.lockCamToggleMode
-        lockCamToggleKeybind = guiEnv.lockCamToggleKeybind
-        lockHeightOffset = guiEnv.lockHeightOffset
-        rangeLimit = guiEnv.rangeLimit
-        currentTheme = guiEnv.currentTheme
-        currentThemeName = guiEnv.currentThemeName
-        selectedGame = guiEnv.selectedGame
-        waitingForKeybind = guiEnv.waitingForKeybind
-    end
-
-    -- Sync locals -> env (called before GUI reads state)
-    local function syncToEnv()
-        guiEnv.lockedOn = lockedOn
-        guiEnv.currentTarget = currentTarget
-        guiEnv.currentTargetType = currentTargetType
-        guiEnv.currentTheme = currentTheme
-        guiEnv.currentThemeName = currentThemeName
-        guiEnv.tooltipsEnabled = tooltipsEnabled
-    end
-
-    guiEnv = {
-        -- Services
-        TweenService = TweenService,
-        UserInputService = UserInputService,
-        RunService = RunService,
-        Players = Players,
-        CoreGui = CoreGui,
-
-        -- State
-        currentTheme = currentTheme,
-        currentThemeName = currentThemeName,
-        THEMES = THEMES,
-        autoSwapEnabled = autoSwapEnabled,
-        closeSwapEnabled = closeSwapEnabled,
-        visibilityCheckEnabled = visibilityCheckEnabled,
-        checkHealthEnabled = checkHealthEnabled,
-        autoRelockEnabled = autoRelockEnabled,
-        realisticEnabled = realisticEnabled,
-        reverseLockEnabled = reverseLockEnabled,
-        perfectOffsetEnabled = perfectOffsetEnabled,
-        mouseTargetMode = mouseTargetMode,
-        npcModeEnabled = npcModeEnabled,
-        predictionEnabled = predictionEnabled,
-        forceCameraMode = forceCameraMode,
-        customShiftlockEnabled = customShiftlockEnabled,
-        shiftlockAutoEnable = shiftlockAutoEnable,
-        shiftlockKeyEnabled = shiftlockKeyEnabled,
-        mouseResistanceEnabled = mouseResistanceEnabled,
-        mouseResistanceScale = mouseResistanceScale,
-        lockOnPlusEnabled = lockOnPlusEnabled,
-        lockCamToggleEnabled = lockCamToggleEnabled,
-        lockCamToggleActive = lockCamToggleActive,
-        lockCamToggleMode = lockCamToggleMode,
-        lockCamToggleKeybind = lockCamToggleKeybind,
-        lockHeightOffset = lockHeightOffset,
-        SLIDER_MIN = SLIDER_MIN,
-        SLIDER_MAX = SLIDER_MAX,
-        rangeLimit = rangeLimit,
-        keybinds = keybinds,
-        waitingForKeybind = waitingForKeybind,
-        selectedGame = selectedGame,
-        gameFunctionStates = gameFunctionStates,
-        gameFunctionButtons = gameFunctionButtons,
-        animatedElements = animatedElements,
-        tooltipsEnabled = tooltipsEnabled,
-        lockedOn = lockedOn,
-        currentTarget = currentTarget,
-        currentTargetType = currentTargetType,
-
-        -- Callbacks (wrappers that sync state)
-        connect = connect,
-        playClickSound = playClickSound,
-        addTooltip = addTooltip,
-        setupTooltip = setupTooltip,
-        toggleTooltips = toggleTooltips,
-        tip = tip,
-        refreshAllUI = function() syncFromEnv(); refreshAllUI() end,
-        applyThemeToUI = function() syncFromEnv(); applyThemeToUI() end,
-        rebuildFriendsList = function() syncFromEnv(); rebuildFriendsList() end,
-        syncTargetingOptions = function() syncFromEnv(); syncTargetingOptions() end,
-        toggleCustomShiftlock = function() syncFromEnv(); toggleCustomShiftlock(); guiEnv.customShiftlockEnabled = customShiftlockEnabled end,
-        setupForceCameraHooks = function() syncFromEnv(); setupForceCameraHooks() end,
-        saveSettings = function() syncFromEnv(); return saveSettings() end,
-        loadSettingsData = function() return loadSettingsData() end,
-        applySettingsData = function(d) local r = applySettingsData(d); syncToEnv(); return r end,
-        updateNPCHighlight = function() if updateNPCHighlight then updateNPCHighlight() end end,
-        setTheme = function(n) syncFromEnv(); setTheme(n); guiEnv.currentTheme = currentTheme; guiEnv.currentThemeName = currentThemeName end,
-        getGameNames = getGameNames,
-        findGameByName = findGameByName,
-        findMatchingGames = findMatchingGames,
-
-        -- Module refs
-        visuals = visuals,
-        localPlayer = localPlayer,
-        PARENT = PARENT,
-        GUI_NAME = GUI_NAME,
-        ScriptData = ScriptData,
-
-        -- Friendlies
-        friendlies = friendlies,
-        isFriendly = isFriendly,
-    }
-
-    local ui = GuiModule.buildGui(guiEnv)
-
-    -- Sync env state back to locals (module may have changed them during load)
-    syncFromEnv()
-
-    -- Assign UI refs to locals
-    gui = ui.gui
-    mainFrame = ui.mainFrame
-    openBtn = ui.openBtn
-    closeBtn = ui.closeBtn
-    infoToggleButton = ui.infoToggleButton
-    headerLabel = ui.headerLabel
-    tabMainButton = ui.tabMainButton
-    tabVisualButton = ui.tabVisualButton
-    tabTargetButton = ui.tabTargetButton
-    mainPage = ui.mainPage
-    visualPage = ui.visualPage
-    targetPage = ui.targetPage
-    highlightButton = ui.highlightButton
-    highlightSecondButton = ui.highlightSecondButton
-    selfFadeButton = ui.selfFadeButton
-    autoswapButton = ui.autoswapButton
-    closeSwapButton = ui.closeSwapButton
-    checkVisibilityButton = ui.checkVisibilityButton
-    checkHealthButton = ui.checkHealthButton
-    autoRelockButton = ui.autoRelockButton
-    realisticButton = ui.realisticButton
-    centerShiftlockButton = ui.centerShiftlockButton
-    lockOnKeyButton = ui.lockOnKeyButton
-    swapKeyButton = ui.swapKeyButton
-    mouseTargetButton = ui.mouseTargetButton
-    friendsList = ui.friendsList
-    heightLabel = ui.heightLabel
-    heightSliderBar = ui.heightSliderBar
-    heightSliderKnob = ui.heightSliderKnob
-    rangeInput = ui.rangeInput
-    extraSettingsFrame = ui.extraSettingsFrame
-    extraSettingsButton = ui.extraSettingsButton
-    extraSettingsCloseButton = ui.extraSettingsCloseButton
-    reverseLockButton = ui.reverseLockButton
-    reverseKeyButton = ui.reverseKeyButton
-    perfectOffsetButton = ui.perfectOffsetButton
-    npcModeButton = ui.npcModeButton
-    predictionButton = ui.predictionButton
-    forceCameraButton = ui.forceCameraButton
-    shiftlockKeyButton = ui.shiftlockKeyButton
-    shiftlockAutoEnableButton = ui.shiftlockAutoEnableButton
-    shiftlockKeyToggleButton = ui.shiftlockKeyToggleButton
-    mouseResistanceButton = ui.mouseResistanceButton
-    mouseResistanceSliderBar = ui.mouseResistanceSliderBar
-    mouseResistanceSliderKnob = ui.mouseResistanceSliderKnob
-    mouseResistanceLabel = ui.mouseResistanceLabel
-    lockOnPlusButton = ui.lockOnPlusButton
-    lockOnPlusKeyButton = ui.lockOnPlusKeyButton
-    gameFunctionsButton = ui.gameFunctionsButton
-    gameFunctionsFrame = ui.gameFunctionsFrame
-    gameFunctionsCloseButton = ui.gameFunctionsCloseButton
-    gameSelectInput = ui.gameSelectInput
-    gameSelectList = ui.gameSelectList
-    gameFunctionButtons = ui.gameFunctionButtons or {}
-    themeButtons = ui.themeButtons or {}
-    saveButton = ui.saveButton
-    loadButton = ui.loadButton
-    lockCamToggleBtn = ui.lockCamToggleBtn
-    lockCamToggleModeBtn = ui.lockCamToggleModeBtn
-    lockCamToggleKeyBtn = ui.lockCamToggleKeyBtn
-
+    gui = Instance.new("ScreenGui")
+    gui.Name = GUI_NAME
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+    gui.DisplayOrder = 999999
+    gui.IgnoreGuiInset = false
     ScriptData.Gui = gui
 
-    -- Keep env in sync with main script state every frame
+    if PARENT then
+        gui.Parent = PARENT
+    else
+        pcall(function() gui.Parent = CoreGui end)
+        if not gui.Parent then gui.Parent = localPlayer:WaitForChild("PlayerGui") end
+    end
+
+    setupTooltip(gui)
+
+    openBtn = Instance.new("TextButton")
+    openBtn.Size = UDim2.new(0, 36, 0, 36)
+    openBtn.Position = UDim2.new(0, 12, 1, -48)
+    openBtn.BackgroundColor3 = currentTheme.secondary
+    openBtn.TextColor3 = Color3.new(1, 1, 1)
+    openBtn.Font = Enum.Font.GothamBold
+    openBtn.TextSize = 20
+    openBtn.Text = "◎"
+    openBtn.BorderSizePixel = 0
+    openBtn.AutoButtonColor = false
+    openBtn.Parent = gui
+    Instance.new("UICorner", openBtn).CornerRadius = UDim.new(0, 10)
+    local openStroke = Instance.new("UIStroke", openBtn)
+    openStroke.Thickness = 2
+    animatedElements[openStroke] = "stroke"
+
+    mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 320, 0, 420)
+    mainFrame.Position = UDim2.new(0, 12, 1, -440)
+    mainFrame.BackgroundColor3 = currentTheme.background
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Visible = false
+    mainFrame.Parent = gui
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+    local mainStroke = Instance.new("UIStroke", mainFrame)
+    mainStroke.Thickness = 2
+    animatedElements[mainStroke] = "stroke"
+
+    headerLabel = Instance.new("TextLabel")
+    headerLabel.Size = UDim2.new(1, -70, 0, 32)
+    headerLabel.Position = UDim2.new(0, 12, 0, 6)
+    headerLabel.BackgroundTransparency = 1
+    headerLabel.Font = Enum.Font.GothamBold
+    headerLabel.TextSize = 16
+    headerLabel.TextXAlignment = Enum.TextXAlignment.Left
+    headerLabel.TextColor3 = currentTheme.text
+    headerLabel.Text = "🎯 Lock-On v3.2"
+    headerLabel.Parent = mainFrame
+    animatedElements[headerLabel] = "text"
+
+    closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 28, 0, 28)
+    closeBtn.Position = UDim2.new(1, -36, 0, 8)
+    closeBtn.BackgroundColor3 = currentTheme.secondary
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 16
+    closeBtn.TextColor3 = Color3.new(1, 1, 1)
+    closeBtn.Text = "×"
+    closeBtn.BorderSizePixel = 0
+    closeBtn.Parent = mainFrame
+    Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+
+    infoToggleButton = Instance.new("TextButton")
+    infoToggleButton.Size = UDim2.new(0, 28, 0, 28)
+    infoToggleButton.Position = UDim2.new(1, -68, 0, 8)
+    infoToggleButton.BackgroundColor3 = currentTheme.secondary
+    infoToggleButton.Font = Enum.Font.GothamBold
+    infoToggleButton.TextSize = 14
+    infoToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    infoToggleButton.Text = "?"
+    infoToggleButton.BorderSizePixel = 0
+    infoToggleButton.Parent = mainFrame
+    Instance.new("UICorner", infoToggleButton).CornerRadius = UDim.new(0, 8)
+    addTooltip(infoToggleButton, "Toggle tooltips")
+
+    extraSettingsButton = Instance.new("TextButton")
+    extraSettingsButton.Size = UDim2.new(0, 70, 0, 24)
+    extraSettingsButton.Position = UDim2.new(0, 10, 1, -32)
+    extraSettingsButton.BackgroundColor3 = currentTheme.secondary
+    extraSettingsButton.Font = Enum.Font.GothamMedium
+    extraSettingsButton.TextSize = 10
+    extraSettingsButton.TextColor3 = Color3.new(1, 1, 1)
+    extraSettingsButton.Text = "⚙ Extra"
+    extraSettingsButton.BorderSizePixel = 0
+    extraSettingsButton.Parent = mainFrame
+    Instance.new("UICorner", extraSettingsButton).CornerRadius = UDim.new(0, 6)
+
+    saveButton = Instance.new("TextButton")
+    saveButton.Size = UDim2.new(0, 70, 0, 24)
+    saveButton.Position = UDim2.new(0.5, -35, 1, -32)
+    saveButton.BackgroundColor3 = Color3.fromRGB(40, 80, 40)
+    saveButton.Font = Enum.Font.GothamMedium
+    saveButton.TextSize = 10
+    saveButton.TextColor3 = Color3.new(1, 1, 1)
+    saveButton.Text = "💾 Save"
+    saveButton.BorderSizePixel = 0
+    saveButton.Parent = mainFrame
+    Instance.new("UICorner", saveButton).CornerRadius = UDim.new(0, 6)
+
+    loadButton = Instance.new("TextButton")
+    loadButton.Size = UDim2.new(0, 70, 0, 24)
+    loadButton.Position = UDim2.new(1, -80, 1, -32)
+    loadButton.BackgroundColor3 = Color3.fromRGB(40, 40, 80)
+    loadButton.Font = Enum.Font.GothamMedium
+    loadButton.TextSize = 10
+    loadButton.TextColor3 = Color3.new(1, 1, 1)
+    loadButton.Text = "📂 Load"
+    loadButton.BorderSizePixel = 0
+    loadButton.Parent = mainFrame
+    Instance.new("UICorner", loadButton).CornerRadius = UDim.new(0, 6)
+
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1, -20, 0, 30)
+    tabBar.Position = UDim2.new(0, 10, 0, 42)
+    tabBar.BackgroundTransparency = 1
+    tabBar.Parent = mainFrame
+
+    local function createTab(txt, x)
+        local t = Instance.new("TextButton")
+        t.Size = UDim2.new(0.333, -4, 1, 0)
+        t.Position = UDim2.new(x, 0, 0, 0)
+        t.Font = Enum.Font.GothamMedium
+        t.TextSize = 11
+        t.TextColor3 = Color3.new(1, 1, 1)
+        t.Text = txt
+        t.BorderSizePixel = 0
+        t.BackgroundColor3 = currentTheme.secondary
+        t.Parent = tabBar
+        Instance.new("UICorner", t).CornerRadius = UDim.new(0, 6)
+        return t
+    end
+
+    tabMainButton = createTab("Main", 0)
+    tabVisualButton = createTab("Visual", 0.335)
+    tabTargetButton = createTab("Target", 0.67)
+
+    local pageSize = UDim2.new(1, -20, 1, -115)
+    local pagePos = UDim2.new(0, 10, 0, 76)
+
+    mainPage = Instance.new("ScrollingFrame")
+    mainPage.Size = pageSize
+    mainPage.Position = pagePos
+    mainPage.BackgroundTransparency = 1
+    mainPage.ScrollBarThickness = 4
+    mainPage.CanvasSize = UDim2.new(0, 0, 0, 295)
+    mainPage.Parent = mainFrame
+
+    visualPage = Instance.new("ScrollingFrame")
+    visualPage.Size = pageSize
+    visualPage.Position = pagePos
+    visualPage.BackgroundTransparency = 1
+    visualPage.ScrollBarThickness = 4
+    visualPage.CanvasSize = UDim2.new(0, 0, 0, 320)
+    visualPage.Visible = false
+    visualPage.Parent = mainFrame
+
+    targetPage = Instance.new("ScrollingFrame")
+    targetPage.Size = pageSize
+    targetPage.Position = pagePos
+    targetPage.BackgroundTransparency = 1
+    targetPage.ScrollBarThickness = 4
+    targetPage.CanvasSize = UDim2.new(0, 0, 0, 320)
+    targetPage.Visible = false
+    targetPage.Parent = mainFrame
+
+    -- MAIN PAGE
+    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Auto-swap on death")
+    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "Target closest")
+    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Swap if hidden")
+    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skip dead targets")
+    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "Re-lock auto")
+    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Front only")
+
+    heightLabel = Instance.new("TextLabel")
+    heightLabel.Size = UDim2.new(1, -10, 0, 20)
+    heightLabel.Position = UDim2.new(0, 0, 0, 196)
+    heightLabel.BackgroundTransparency = 1
+    heightLabel.Font = Enum.Font.GothamBold
+    heightLabel.TextSize = 11
+    heightLabel.TextColor3 = currentTheme.text
+    heightLabel.TextXAlignment = Enum.TextXAlignment.Left
+    heightLabel.Text = string.format("Height: %.1f", lockHeightOffset)
+    heightLabel.Parent = mainPage
+
+    heightSliderBar = Instance.new("Frame")
+    heightSliderBar.Size = UDim2.new(1, -10, 0, 18)
+    heightSliderBar.Position = UDim2.new(0, 0, 0, 216)
+    heightSliderBar.BackgroundColor3 = currentTheme.secondary
+    heightSliderBar.BorderSizePixel = 0
+    heightSliderBar.Parent = mainPage
+    Instance.new("UICorner", heightSliderBar).CornerRadius = UDim.new(0, 6)
+
+    heightSliderKnob = Instance.new("Frame")
+    heightSliderKnob.Size = UDim2.new(0, 16, 1, -4)
+    heightSliderKnob.Position = UDim2.new((lockHeightOffset - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN), 0, 0.5, 0)
+    heightSliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    heightSliderKnob.BackgroundColor3 = currentTheme.primary1
+    heightSliderKnob.BorderSizePixel = 0
+    heightSliderKnob.Parent = heightSliderBar
+    Instance.new("UICorner", heightSliderKnob).CornerRadius = UDim.new(0, 4)
+    animatedElements[heightSliderKnob] = "background"
+
+    local rangeLabel = Instance.new("TextLabel")
+    rangeLabel.Size = UDim2.new(0.5, 0, 0, 20)
+    rangeLabel.Position = UDim2.new(0, 0, 0, 270)
+    rangeLabel.BackgroundTransparency = 1
+    rangeLabel.Font = Enum.Font.GothamBold
+    rangeLabel.TextSize = 11
+    rangeLabel.TextColor3 = currentTheme.text
+    rangeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    rangeLabel.Text = "Range (0=∞):"
+    rangeLabel.Parent = mainPage
+
+    rangeInput = Instance.new("TextBox")
+    rangeInput.Size = UDim2.new(0.45, 0, 0, 22)
+    rangeInput.Position = UDim2.new(0.5, 4, 0, 268)
+    rangeInput.Font = Enum.Font.Gotham
+    rangeInput.TextSize = 12
+    rangeInput.TextColor3 = currentTheme.text
+    rangeInput.Text = tostring(rangeLimit)
+    rangeInput.BackgroundColor3 = currentTheme.secondary
+    rangeInput.BorderSizePixel = 0
+    rangeInput.ClearTextOnFocus = false
+    rangeInput.Parent = mainPage
+    Instance.new("UICorner", rangeInput).CornerRadius = UDim.new(0, 6)
+
+    -- VISUAL PAGE
+    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Glow target")
+    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Highlight #2")
+    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Fade self")
+
+    local themeLabel = Instance.new("TextLabel")
+    themeLabel.Size = UDim2.new(1, -10, 0, 20)
+    themeLabel.Position = UDim2.new(0, 0, 0, 100)
+    themeLabel.BackgroundTransparency = 1
+    themeLabel.Font = Enum.Font.GothamBold
+    themeLabel.TextSize = 12
+    themeLabel.TextColor3 = currentTheme.text
+    themeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    themeLabel.Text = "🎨 Themes:"
+    themeLabel.Parent = visualPage
+
+    local ti = 0
+    for name in pairs(THEMES) do
+        local row, col = math.floor(ti / 2), ti % 2
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(0.48, 0, 0, 26)
+        b.Position = UDim2.new(col * 0.52, 0, 0, 124 + row * 30)
+        b.Font = Enum.Font.GothamMedium
+        b.TextSize = 11
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Text = name
+        b.BorderSizePixel = 0
+        b.BackgroundColor3 = currentTheme.secondary
+        b.Parent = visualPage
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0, 6)
+        themeButtons[name] = b
+        connect(b.MouseButton1Click, function() playClickSound(); setTheme(name) end)
+        ti += 1
+    end
+
+    local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
+    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Override all shiftlocks")
+    
+    -- Shiftlock key with On/Off toggle
+    shiftlockKeyButton = Instance.new("TextButton")
+    shiftlockKeyButton.Size = UDim2.new(0.68, 0, 0, 28)
+    shiftlockKeyButton.Position = UDim2.new(0, 0, 0, afterThemes + 32)
+    shiftlockKeyButton.Font = Enum.Font.GothamMedium
+    shiftlockKeyButton.TextSize = 12
+    shiftlockKeyButton.TextColor3 = Color3.new(1, 1, 1)
+    shiftlockKeyButton.Text = "Shiftlock Key: LeftShift"
+    shiftlockKeyButton.BorderSizePixel = 0
+    shiftlockKeyButton.BackgroundColor3 = currentTheme.secondary
+    shiftlockKeyButton.Parent = visualPage
+    Instance.new("UICorner", shiftlockKeyButton).CornerRadius = UDim.new(0, 6)
+    addTooltip(shiftlockKeyButton, "Change key")
+    
+    shiftlockKeyToggleButton = Instance.new("TextButton")
+    shiftlockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
+    shiftlockKeyToggleButton.Position = UDim2.new(0.7, 4, 0, afterThemes + 32)
+    shiftlockKeyToggleButton.Font = Enum.Font.GothamMedium
+    shiftlockKeyToggleButton.TextSize = 11
+    shiftlockKeyToggleButton.TextColor3 = Color3.new(1, 1, 1)
+    shiftlockKeyToggleButton.Text = shiftlockKeyEnabled and "On" or "Off"
+    shiftlockKeyToggleButton.BorderSizePixel = 0
+    shiftlockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
+    shiftlockKeyToggleButton.Parent = visualPage
+    Instance.new("UICorner", shiftlockKeyToggleButton).CornerRadius = UDim.new(0, 6)
+    addTooltip(shiftlockKeyToggleButton, "Enable/disable keybind")
+    
+    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Enable on load")
+    
+    visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 100)
+
+    -- TARGET PAGE
+    local keysLabel = Instance.new("TextLabel")
+    keysLabel.Size = UDim2.new(1, -10, 0, 20)
+    keysLabel.Position = UDim2.new(0, 0, 0, 0)
+    keysLabel.BackgroundTransparency = 1
+    keysLabel.Font = Enum.Font.GothamBold
+    keysLabel.TextSize = 11
+    keysLabel.TextColor3 = currentTheme.text
+    keysLabel.TextXAlignment = Enum.TextXAlignment.Left
+    keysLabel.Text = "⌨ Keybinds:"
+    keysLabel.Parent = targetPage
+
+    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Toggle lock")
+    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Next target")
+
+    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Cursor target")
+
+    local friendsLabel = Instance.new("TextLabel")
+    friendsLabel.Size = UDim2.new(1, -10, 0, 20)
+    friendsLabel.Position = UDim2.new(0, 0, 0, 124)
+    friendsLabel.BackgroundTransparency = 1
+    friendsLabel.Font = Enum.Font.GothamBold
+    friendsLabel.TextSize = 11
+    friendsLabel.TextColor3 = currentTheme.text
+    friendsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    friendsLabel.Text = "👥 Friendlies:"
+    friendsLabel.Parent = targetPage
+
+    friendsList = Instance.new("ScrollingFrame")
+    friendsList.Size = UDim2.new(1, -10, 0, 130)
+    friendsList.Position = UDim2.new(0, 0, 0, 146)
+    friendsList.BackgroundColor3 = currentTheme.secondary
+    friendsList.BorderSizePixel = 0
+    friendsList.ScrollBarThickness = 4
+    friendsList.Parent = targetPage
+    Instance.new("UICorner", friendsList).CornerRadius = UDim.new(0, 6)
+
+    -- EXTRA SETTINGS
+    extraSettingsFrame = Instance.new("Frame")
+    extraSettingsFrame.Size = UDim2.new(0, 320, 0, 420)
+    extraSettingsFrame.Position = UDim2.new(0, 340, 1, -440)
+    extraSettingsFrame.BackgroundColor3 = currentTheme.background
+    extraSettingsFrame.BorderSizePixel = 0
+    extraSettingsFrame.Visible = false
+    extraSettingsFrame.ClipsDescendants = true
+    extraSettingsFrame.Parent = gui
+    Instance.new("UICorner", extraSettingsFrame).CornerRadius = UDim.new(0, 12)
+    local extraStroke = Instance.new("UIStroke", extraSettingsFrame)
+    extraStroke.Thickness = 2
+    animatedElements[extraStroke] = "stroke"
+
+    local extraHeader = Instance.new("TextLabel")
+    extraHeader.Size = UDim2.new(1, -50, 0, 26)
+    extraHeader.Position = UDim2.new(0, 12, 0, 8)
+    extraHeader.BackgroundTransparency = 1
+    extraHeader.Font = Enum.Font.GothamBold
+    extraHeader.TextSize = 14
+    extraHeader.TextXAlignment = Enum.TextXAlignment.Left
+    extraHeader.TextColor3 = currentTheme.text
+    extraHeader.Text = "⚙ Extra Settings"
+    extraHeader.Parent = extraSettingsFrame
+
+    extraSettingsCloseButton = Instance.new("TextButton")
+    extraSettingsCloseButton.Size = UDim2.new(0, 26, 0, 26)
+    extraSettingsCloseButton.Position = UDim2.new(1, -34, 0, 8)
+    extraSettingsCloseButton.BackgroundColor3 = currentTheme.secondary
+    extraSettingsCloseButton.Font = Enum.Font.GothamBold
+    extraSettingsCloseButton.TextSize = 14
+    extraSettingsCloseButton.TextColor3 = Color3.new(1, 1, 1)
+    extraSettingsCloseButton.Text = "×"
+    extraSettingsCloseButton.BorderSizePixel = 0
+    extraSettingsCloseButton.Parent = extraSettingsFrame
+    Instance.new("UICorner", extraSettingsCloseButton).CornerRadius = UDim.new(0, 6)
+
+    -- Scrollable content area
+    local extraScrollFrame = Instance.new("ScrollingFrame")
+    extraScrollFrame.Size = UDim2.new(1, -10, 1, -45)
+    extraScrollFrame.Position = UDim2.new(0, 5, 0, 40)
+    extraScrollFrame.BackgroundTransparency = 1
+    extraScrollFrame.ScrollBarThickness = 4
+    extraScrollFrame.ScrollBarImageColor3 = currentTheme.primary1
+    extraScrollFrame.BorderSizePixel = 0
+    extraScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 460)
+    extraScrollFrame.Parent = extraSettingsFrame
+
+    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", "Face away")
+    reverseLockButton.Position = UDim2.new(0, 5, 0, 0); reverseLockButton.Size = UDim2.new(1, -10, 0, 28)
+
+    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", "Hold reverse")
+    reverseKeyButton.Position = UDim2.new(0, 5, 0, 32); reverseKeyButton.Size = UDim2.new(1, -10, 0, 28)
+
+    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", "Aim offset")
+    perfectOffsetButton.Position = UDim2.new(0, 5, 0, 64); perfectOffsetButton.Size = UDim2.new(1, -10, 0, 28)
+
+    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", "Target NPCs")
+    npcModeButton.Position = UDim2.new(0, 5, 0, 96); npcModeButton.Size = UDim2.new(1, -10, 0, 28)
+
+    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", "Aim ahead")
+    predictionButton.Position = UDim2.new(0, 5, 0, 128); predictionButton.Size = UDim2.new(1, -10, 0, 28)
+
+    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", "Override game camera")
+    forceCameraButton.Position = UDim2.new(0, 5, 0, 160); forceCameraButton.Size = UDim2.new(1, -10, 0, 28)
+
+    -- Mouse Resistance toggle and slider
+    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", "Allow pulling away")
+    mouseResistanceButton.Position = UDim2.new(0, 5, 0, 192); mouseResistanceButton.Size = UDim2.new(1, -10, 0, 28)
+    
+    mouseResistanceLabel = Instance.new("TextLabel")
+    mouseResistanceLabel.Size = UDim2.new(1, -10, 0, 16)
+    mouseResistanceLabel.Position = UDim2.new(0, 5, 0, 224)
+    mouseResistanceLabel.BackgroundTransparency = 1
+    mouseResistanceLabel.Font = Enum.Font.Gotham
+    mouseResistanceLabel.TextSize = 11
+    mouseResistanceLabel.TextColor3 = currentTheme.text
+    mouseResistanceLabel.TextXAlignment = Enum.TextXAlignment.Left
+    mouseResistanceLabel.Text = string.format("Resistance: %.0f%%", mouseResistanceScale * 100)
+    mouseResistanceLabel.Parent = extraScrollFrame
+    
+    mouseResistanceSliderBar = Instance.new("Frame")
+    mouseResistanceSliderBar.Size = UDim2.new(1, -10, 0, 8)
+    mouseResistanceSliderBar.Position = UDim2.new(0, 5, 0, 242)
+    mouseResistanceSliderBar.BackgroundColor3 = currentTheme.secondary
+    mouseResistanceSliderBar.BorderSizePixel = 0
+    mouseResistanceSliderBar.Parent = extraScrollFrame
+    Instance.new("UICorner", mouseResistanceSliderBar).CornerRadius = UDim.new(0, 4)
+    
+    mouseResistanceSliderKnob = Instance.new("Frame")
+    mouseResistanceSliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    -- Convert -1 to 1 range to 0 to 1 for position
+    mouseResistanceSliderKnob.Position = UDim2.new((mouseResistanceScale + 1) / 2, 0, 0.5, 0)
+    mouseResistanceSliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+    mouseResistanceSliderKnob.BackgroundColor3 = currentTheme.primary1
+    mouseResistanceSliderKnob.BorderSizePixel = 0
+    mouseResistanceSliderKnob.Parent = mouseResistanceSliderBar
+    Instance.new("UICorner", mouseResistanceSliderKnob).CornerRadius = UDim.new(1, 0)
+    
+    -- LockOn+ toggle and keybind
+    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", "Rotate body to target")
+    lockOnPlusButton.Position = UDim2.new(0, 5, 0, 260); lockOnPlusButton.Size = UDim2.new(1, -10, 0, 28)
+    
+    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", "Hold to activate")
+    lockOnPlusKeyButton.Position = UDim2.new(0, 5, 0, 292); lockOnPlusKeyButton.Size = UDim2.new(1, -10, 0, 28)
+
+    -- LockCamToggle
+    lockCamToggleBtn = createButton(extraScrollFrame, 324, "LockCamToggle: OFF", "Lock target without forcing camera")
+    lockCamToggleBtn.Position = UDim2.new(0, 5, 0, 324); lockCamToggleBtn.Size = UDim2.new(1, -10, 0, 28)
+    lockCamToggleModeBtn = createButton(extraScrollFrame, 356, "Mode: Hold", "Hold or Toggle")
+    lockCamToggleModeBtn.Position = UDim2.new(0, 5, 0, 356); lockCamToggleModeBtn.Size = UDim2.new(1, -10, 0, 28)
+    lockCamToggleKeyBtn = createButton(extraScrollFrame, 388, "LockCam Key: F", "Set keybind")
+    lockCamToggleKeyBtn.Position = UDim2.new(0, 5, 0, 388); lockCamToggleKeyBtn.Size = UDim2.new(1, -10, 0, 28)
+    connect(lockCamToggleBtn.MouseButton1Click, function() playClickSound(); lockCamToggleEnabled = not lockCamToggleEnabled; if not lockCamToggleEnabled then lockCamToggleActive = false end; refreshAllUI() end)
+    connect(lockCamToggleModeBtn.MouseButton1Click, function() playClickSound(); lockCamToggleMode = lockCamToggleMode == "Hold" and "Toggle" or "Hold"; lockCamToggleActive = false; refreshAllUI() end)
+    connect(lockCamToggleKeyBtn.MouseButton1Click, function() playClickSound(); waitingForKeybind = "_LockCamToggle"; lockCamToggleKeyBtn.Text = "..." end)
+
+    -- GAME-SPECIFIC FUNCTIONS - Always show selector
+    -- Game selector button
+    gameFunctionsButton = createButton(extraScrollFrame, 420, "🎮 Game Functions", "Select game for special features")
+    gameFunctionsButton.Position = UDim2.new(0, 5, 0, 420); gameFunctionsButton.Size = UDim2.new(1, -10, 0, 28)
+    gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
+
+    extraSettingsFrame.Size = UDim2.new(0, 320, 0, 420)
+    
+    -- Game functions frame (game selector + functions)
+    gameFunctionsFrame = Instance.new("Frame")
+    gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 200)
+    gameFunctionsFrame.Position = UDim2.new(0, 668, 1, -440)
+    gameFunctionsFrame.BackgroundColor3 = currentTheme.background
+    gameFunctionsFrame.BorderSizePixel = 0
+    gameFunctionsFrame.Visible = false
+    gameFunctionsFrame.Parent = gui
+    Instance.new("UICorner", gameFunctionsFrame).CornerRadius = UDim.new(0, 12)
+    local gameFuncStroke = Instance.new("UIStroke", gameFunctionsFrame)
+    gameFuncStroke.Thickness = 2
+    animatedElements[gameFuncStroke] = "stroke"
+    
+    -- Header
+    local gameFuncHeader = Instance.new("TextLabel")
+    gameFuncHeader.Name = "Header"
+    gameFuncHeader.Size = UDim2.new(1, -50, 0, 26)
+    gameFuncHeader.Position = UDim2.new(0, 12, 0, 8)
+    gameFuncHeader.BackgroundTransparency = 1
+    gameFuncHeader.Font = Enum.Font.GothamBold
+    gameFuncHeader.TextSize = 14
+    gameFuncHeader.TextXAlignment = Enum.TextXAlignment.Left
+    gameFuncHeader.TextColor3 = currentTheme.text
+    gameFuncHeader.Text = "🎮 Game Functions"
+    gameFuncHeader.Parent = gameFunctionsFrame
+    
+    -- Close button
+    gameFunctionsCloseButton = Instance.new("TextButton")
+    gameFunctionsCloseButton.Size = UDim2.new(0, 24, 0, 24)
+    gameFunctionsCloseButton.Position = UDim2.new(1, -32, 0, 8)
+    gameFunctionsCloseButton.BackgroundColor3 = currentTheme.secondary
+    gameFunctionsCloseButton.Font = Enum.Font.GothamBold
+    gameFunctionsCloseButton.TextSize = 14
+    gameFunctionsCloseButton.TextColor3 = Color3.new(1, 1, 1)
+    gameFunctionsCloseButton.Text = "×"
+    gameFunctionsCloseButton.BorderSizePixel = 0
+    gameFunctionsCloseButton.Parent = gameFunctionsFrame
+    Instance.new("UICorner", gameFunctionsCloseButton).CornerRadius = UDim.new(0, 6)
+    
+    -- Game selector label
+    local selectLabel = Instance.new("TextLabel")
+    selectLabel.Size = UDim2.new(1, -20, 0, 18)
+    selectLabel.Position = UDim2.new(0, 10, 0, 38)
+    selectLabel.BackgroundTransparency = 1
+    selectLabel.Font = Enum.Font.GothamMedium
+    selectLabel.TextSize = 11
+    selectLabel.TextXAlignment = Enum.TextXAlignment.Left
+    selectLabel.TextColor3 = currentTheme.text
+    selectLabel.Text = "Select Game:"
+    selectLabel.Parent = gameFunctionsFrame
+    
+    -- Game selector input
+    gameSelectInput = Instance.new("TextBox")
+    gameSelectInput.Size = UDim2.new(1, -20, 0, 28)
+    gameSelectInput.Position = UDim2.new(0, 10, 0, 58)
+    gameSelectInput.BackgroundColor3 = currentTheme.secondary
+    gameSelectInput.BorderSizePixel = 0
+    gameSelectInput.Font = Enum.Font.GothamMedium
+    gameSelectInput.TextSize = 12
+    gameSelectInput.TextColor3 = Color3.new(1, 1, 1)
+    gameSelectInput.PlaceholderText = "Type game name..."
+    gameSelectInput.PlaceholderColor3 = Color3.fromRGB(150, 150, 150)
+    gameSelectInput.Text = ""
+    gameSelectInput.ClearTextOnFocus = false
+    gameSelectInput.Parent = gameFunctionsFrame
+    Instance.new("UICorner", gameSelectInput).CornerRadius = UDim.new(0, 6)
+    
+    -- Autofill dropdown list
+    gameSelectList = Instance.new("Frame")
+    gameSelectList.Size = UDim2.new(1, -20, 0, 0)
+    gameSelectList.Position = UDim2.new(0, 10, 0, 88)
+    gameSelectList.BackgroundColor3 = currentTheme.secondary
+    gameSelectList.BorderSizePixel = 0
+    gameSelectList.Visible = false
+    gameSelectList.ClipsDescendants = true
+    gameSelectList.Parent = gameFunctionsFrame
+    Instance.new("UICorner", gameSelectList).CornerRadius = UDim.new(0, 6)
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = gameSelectList
+    
+    -- Container for function buttons (below selector)
+    local funcContainer = Instance.new("Frame")
+    funcContainer.Name = "FuncContainer"
+    funcContainer.Size = UDim2.new(1, -20, 0, 0)
+    funcContainer.Position = UDim2.new(0, 10, 0, 95)
+    funcContainer.BackgroundTransparency = 1
+    funcContainer.Parent = gameFunctionsFrame
+    
+    -- Function to rebuild the functions list
+    local function rebuildGameFunctions()
+        -- Clear old buttons
+        for _, child in ipairs(funcContainer:GetChildren()) do
+            child:Destroy()
+        end
+        gameFunctionButtons = {}
+        
+        if not selectedGame then
+            funcContainer.Size = UDim2.new(1, -20, 0, 0)
+            gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 130)
+            return
+        end
+        
+        -- Update header
+        gameFuncHeader.Text = "🎮 " .. selectedGame.name
+        
+        -- Create function buttons
+        local funcY = 0
+        for i, func in ipairs(selectedGame.functions) do
+            gameFunctionStates[func.name] = gameFunctionStates[func.name] or false
+            
+            local funcBtn = Instance.new("TextButton")
+            funcBtn.Size = UDim2.new(1, 0, 0, 28)
+            funcBtn.Position = UDim2.new(0, 0, 0, funcY)
+            funcBtn.BackgroundColor3 = currentTheme.secondary
+            funcBtn.BorderSizePixel = 0
+            funcBtn.Font = Enum.Font.GothamMedium
+            funcBtn.TextSize = 11
+            funcBtn.TextColor3 = Color3.new(1, 1, 1)
+            funcBtn.Text = func.name .. ": " .. (gameFunctionStates[func.name] and "ON" or "OFF")
+            funcBtn.Parent = funcContainer
+            Instance.new("UICorner", funcBtn).CornerRadius = UDim.new(0, 6)
+            
+            gameFunctionButtons[func.name] = funcBtn
+            
+            connect(funcBtn.MouseButton1Click, function()
+                playClickSound()
+                gameFunctionStates[func.name] = not gameFunctionStates[func.name]
+                funcBtn.Text = func.name .. ": " .. (gameFunctionStates[func.name] and "ON" or "OFF")
+            end)
+            
+            funcY = funcY + 32
+        end
+        
+        funcContainer.Size = UDim2.new(1, -20, 0, funcY)
+        gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 95 + funcY + 15)
+    end
+    
+    -- Function to update autofill list
+    local function updateAutofillList(text)
+        -- Clear old items
+        for _, child in ipairs(gameSelectList:GetChildren()) do
+            if child:IsA("TextButton") then
+                child:Destroy()
+            end
+        end
+        
+        if text == "" then
+            -- Show all games
+            local matches = getGameNames()
+            local height = math.min(#matches * 24, 96)
+            gameSelectList.Size = UDim2.new(1, -20, 0, height)
+            gameSelectList.Visible = #matches > 0
+            
+            for i, name in ipairs(matches) do
+                local item = Instance.new("TextButton")
+                item.Size = UDim2.new(1, 0, 0, 24)
+                item.BackgroundColor3 = currentTheme.secondary
+                item.BackgroundTransparency = 0.3
+                item.BorderSizePixel = 0
+                item.Font = Enum.Font.GothamMedium
+                item.TextSize = 11
+                item.TextColor3 = Color3.new(1, 1, 1)
+                item.Text = name
+                item.LayoutOrder = i
+                item.Parent = gameSelectList
+                
+                connect(item.MouseButton1Click, function()
+                    playClickSound()
+                    gameSelectInput.Text = name
+                    selectedGame = findGameByName(name)
+                    gameSelectList.Visible = false
+                    rebuildGameFunctions()
+                end)
+            end
+        else
+            -- Show matching games
+            local matches = findMatchingGames(text)
+            local height = math.min(#matches * 24, 96)
+            gameSelectList.Size = UDim2.new(1, -20, 0, height)
+            gameSelectList.Visible = #matches > 0
+            
+            for i, name in ipairs(matches) do
+                local item = Instance.new("TextButton")
+                item.Size = UDim2.new(1, 0, 0, 24)
+                item.BackgroundColor3 = currentTheme.secondary
+                item.BackgroundTransparency = 0.3
+                item.BorderSizePixel = 0
+                item.Font = Enum.Font.GothamMedium
+                item.TextSize = 11
+                item.TextColor3 = Color3.new(1, 1, 1)
+                item.Text = name
+                item.LayoutOrder = i
+                item.Parent = gameSelectList
+                
+                connect(item.MouseButton1Click, function()
+                    playClickSound()
+                    gameSelectInput.Text = name
+                    selectedGame = findGameByName(name)
+                    gameSelectList.Visible = false
+                    rebuildGameFunctions()
+                end)
+            end
+        end
+    end
+    
+    -- Input events
+    connect(gameSelectInput.Focused, function()
+        updateAutofillList(gameSelectInput.Text)
+    end)
+    
+    connect(gameSelectInput:GetPropertyChangedSignal("Text"), function()
+        updateAutofillList(gameSelectInput.Text)
+    end)
+    
+    connect(gameSelectInput.FocusLost, function(enterPressed)
+        task.delay(0.1, function() -- Small delay to allow clicking on list items
+            if not gameSelectInput:IsFocused() then
+                gameSelectList.Visible = false
+            end
+        end)
+        
+        if enterPressed then
+            local game = findGameByName(gameSelectInput.Text)
+            if game then
+                selectedGame = game
+                rebuildGameFunctions()
+            end
+        end
+    end)
+
+    -- EVENTS
+    connect(openBtn.MouseButton1Click, function() playClickSound(); mainFrame.Visible = true; openBtn.Visible = false end)
+    connect(closeBtn.MouseButton1Click, function() playClickSound(); mainFrame.Visible = false; openBtn.Visible = true; extraSettingsFrame.Visible = false; if gameFunctionsFrame then gameFunctionsFrame.Visible = false end end)
+    connect(infoToggleButton.MouseButton1Click, function()
+        playClickSound()
+        toggleTooltips()
+        if tooltipsEnabled then animatedElements[infoToggleButton] = "background"
+        else animatedElements[infoToggleButton] = nil; infoToggleButton.BackgroundColor3 = currentTheme.secondary end
+    end)
+    connect(extraSettingsButton.MouseButton1Click, function() playClickSound(); extraSettingsFrame.Visible = not extraSettingsFrame.Visible end)
+    connect(extraSettingsCloseButton.MouseButton1Click, function() playClickSound(); extraSettingsFrame.Visible = false end)
+    
+    -- Game functions button events
+    connect(gameFunctionsButton.MouseButton1Click, function() 
+        playClickSound()
+        gameFunctionsFrame.Visible = not gameFunctionsFrame.Visible 
+    end)
+    connect(gameFunctionsCloseButton.MouseButton1Click, function() 
+        playClickSound()
+        gameFunctionsFrame.Visible = false 
+    end)
+
+    connect(saveButton.MouseButton1Click, function()
+        playClickSound()
+        saveButton.Text = saveSettings() and "✓ Saved!" or "✗ Error"
+        task.delay(1.5, function() if saveButton and saveButton.Parent then saveButton.Text = "💾 Save" end end)
+    end)
+    
+    connect(loadButton.MouseButton1Click, function()
+        playClickSound()
+        local data = loadSettingsData()
+        if data and applySettingsData(data) then
+            loadButton.Text = "✓ Loaded!"
+            refreshAllUI(); applyThemeToUI(); rebuildFriendsList(); syncTargetingOptions()
+        else loadButton.Text = "✗ None" end
+        task.delay(1.5, function() if loadButton and loadButton.Parent then loadButton.Text = "📂 Load" end end)
+    end)
+
+    local function setTab(n)
+        mainPage.Visible = n == "Main"
+        visualPage.Visible = n == "Visual"
+        targetPage.Visible = n == "Target"
+        for _, tab in ipairs({tabMainButton, tabVisualButton, tabTargetButton}) do
+            animatedElements[tab] = nil
+            if tab.Parent then tab.BackgroundColor3 = currentTheme.secondary end
+        end
+        local active = n == "Main" and tabMainButton or n == "Visual" and tabVisualButton or tabTargetButton
+        animatedElements[active] = "background"
+    end
+    
+    connect(tabMainButton.MouseButton1Click, function() playClickSound(); setTab("Main") end)
+    connect(tabVisualButton.MouseButton1Click, function() playClickSound(); setTab("Visual") end)
+    connect(tabTargetButton.MouseButton1Click, function() playClickSound(); setTab("Target") end)
+
+
+    connect(autoswapButton.MouseButton1Click, function() playClickSound(); autoSwapEnabled = not autoSwapEnabled; refreshAllUI() end)
+    connect(closeSwapButton.MouseButton1Click, function() playClickSound(); closeSwapEnabled = not closeSwapEnabled; refreshAllUI() end)
+    connect(checkVisibilityButton.MouseButton1Click, function() playClickSound(); visibilityCheckEnabled = not visibilityCheckEnabled; syncTargetingOptions(); refreshAllUI() end)
+    connect(checkHealthButton.MouseButton1Click, function() playClickSound(); checkHealthEnabled = not checkHealthEnabled; syncTargetingOptions(); refreshAllUI() end)
+    connect(autoRelockButton.MouseButton1Click, function() playClickSound(); autoRelockEnabled = not autoRelockEnabled; refreshAllUI() end)
+    connect(realisticButton.MouseButton1Click, function() playClickSound(); realisticEnabled = not realisticEnabled; syncTargetingOptions(); refreshAllUI() end)
+
+    connect(highlightButton.MouseButton1Click, function() playClickSound(); if visuals then pcall(function() visuals:SetHighlightEnabled(not visuals:IsHighlightEnabled()) end); updateNPCHighlight() end; refreshAllUI() end)
+    connect(highlightSecondButton.MouseButton1Click, function() playClickSound(); if visuals then pcall(function() visuals:SetHighlightSecondEnabled(not visuals:IsHighlightSecondEnabled()) end) end; refreshAllUI() end)
+    connect(selfFadeButton.MouseButton1Click, function() playClickSound(); if visuals then pcall(function() visuals:SetSelfFadeEnabled(not visuals:IsSelfFadeEnabled()) end) end; refreshAllUI() end)
+    
+    -- Custom Shiftlock controls
+    connect(centerShiftlockButton.MouseButton1Click, function() 
+        playClickSound()
+        toggleCustomShiftlock()
+        refreshAllUI() 
+    end)
+    connect(shiftlockKeyButton.MouseButton1Click, function() 
+        playClickSound()
+        waitingForKeybind = "ShiftLock"
+        shiftlockKeyButton.Text = "..." 
+    end)
+    connect(shiftlockKeyToggleButton.MouseButton1Click, function()
+        playClickSound()
+        shiftlockKeyEnabled = not shiftlockKeyEnabled
+        refreshAllUI()
+    end)
+    connect(shiftlockAutoEnableButton.MouseButton1Click, function() 
+        playClickSound()
+        shiftlockAutoEnable = not shiftlockAutoEnable
+        refreshAllUI() 
+    end)
+
+    connect(mouseTargetButton.MouseButton1Click, function() playClickSound(); mouseTargetMode = not mouseTargetMode; refreshAllUI() end)
+
+
+    connect(lockOnKeyButton.MouseButton1Click, function() playClickSound(); waitingForKeybind = "LockOn"; lockOnKeyButton.Text = "..." end)
+    connect(swapKeyButton.MouseButton1Click, function() playClickSound(); waitingForKeybind = "SwapTarget"; swapKeyButton.Text = "..." end)
+
+    connect(reverseKeyButton.MouseButton1Click, function() playClickSound(); waitingForKeybind = "ReverseLock"; reverseKeyButton.Text = "..." end)
+
+    connect(reverseLockButton.MouseButton1Click, function() playClickSound(); reverseLockEnabled = not reverseLockEnabled; refreshAllUI() end)
+    connect(perfectOffsetButton.MouseButton1Click, function() playClickSound(); perfectOffsetEnabled = not perfectOffsetEnabled; refreshAllUI() end)
+    connect(npcModeButton.MouseButton1Click, function() playClickSound(); npcModeEnabled = not npcModeEnabled; refreshAllUI() end)
+    connect(predictionButton.MouseButton1Click, function() playClickSound(); predictionEnabled = not predictionEnabled; refreshAllUI() end)
+    connect(forceCameraButton.MouseButton1Click, function() 
+        playClickSound()
+        forceCameraMode = not forceCameraMode
+        setupForceCameraHooks()
+        refreshAllUI() 
+    end)
+    
+    connect(mouseResistanceButton.MouseButton1Click, function()
+        playClickSound()
+        mouseResistanceEnabled = not mouseResistanceEnabled
+        refreshAllUI()
+    end)
+
+    connect(rangeInput.FocusLost, function() rangeLimit = math.max(0, tonumber(rangeInput.Text) or 0); rangeInput.Text = tostring(rangeLimit); syncTargetingOptions() end)
+
+    local dragging = false
+    connect(heightSliderBar.InputBegan, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = true end end)
+    connect(heightSliderBar.InputEnded, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    connect(UserInputService.InputChanged, function(i)
+        if dragging and heightSliderBar.Parent and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local a = math.clamp((UserInputService:GetMouseLocation().X - heightSliderBar.AbsolutePosition.X) / heightSliderBar.AbsoluteSize.X, 0, 1)
+            if heightSliderKnob.Parent then heightSliderKnob.Position = UDim2.new(a, 0, 0.5, 0) end
+            lockHeightOffset = SLIDER_MIN + (SLIDER_MAX - SLIDER_MIN) * a
+            if heightLabel and heightLabel.Parent then heightLabel.Text = string.format("Height: %.1f", lockHeightOffset) end
+        end
+    end)
+    
+    -- Mouse resistance slider
+    local draggingResistance = false
+    connect(mouseResistanceSliderBar.InputBegan, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then draggingResistance = true end end)
+    connect(mouseResistanceSliderBar.InputEnded, function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then draggingResistance = false end end)
+    connect(UserInputService.InputChanged, function(i)
+        if draggingResistance and mouseResistanceSliderBar.Parent and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            local a = math.clamp((UserInputService:GetMouseLocation().X - mouseResistanceSliderBar.AbsolutePosition.X) / mouseResistanceSliderBar.AbsoluteSize.X, 0, 1)
+            if mouseResistanceSliderKnob.Parent then mouseResistanceSliderKnob.Position = UDim2.new(a, 0, 0.5, 0) end
+            -- Convert 0-1 slider position to -1 to 1 scale
+            mouseResistanceScale = (a * 2) - 1
+            if mouseResistanceLabel and mouseResistanceLabel.Parent then mouseResistanceLabel.Text = string.format("Resistance: %.0f%%", mouseResistanceScale * 100) end
+        end
+    end)
+    
+    -- LockOn+ controls
+    connect(lockOnPlusButton.MouseButton1Click, function()
+        playClickSound()
+        lockOnPlusEnabled = not lockOnPlusEnabled
+        refreshAllUI()
+    end)
+    connect(lockOnPlusKeyButton.MouseButton1Click, function()
+        playClickSound()
+        waitingForKeybind = "LockOnPlus"
+        lockOnPlusKeyButton.Text = "..."
+    end)
+
+    setTab("Main")
+    refreshAllUI()
+    applyThemeToUI()
+    rebuildFriendsList()
+    syncTargetingOptions()
+
+    local indicator = Instance.new("TextLabel")
+    indicator.Size = UDim2.new(0, 160, 0, 28)
+    indicator.Position = UDim2.new(0.5, -80, 0, 10)
+    indicator.BackgroundColor3 = currentTheme.background
+    indicator.BackgroundTransparency = 0.1
+    indicator.TextColor3 = Color3.new(1, 1, 1)
+    indicator.Font = Enum.Font.GothamBold
+    indicator.TextSize = 13
+    indicator.Visible = false
+    indicator.Parent = gui
+    Instance.new("UICorner", indicator).CornerRadius = UDim.new(0, 10)
+    local indicatorStroke = Instance.new("UIStroke", indicator)
+    indicatorStroke.Thickness = 2
+    animatedElements[indicatorStroke] = "stroke"
+    
+    -- Health bar container
+    local healthContainer = Instance.new("Frame")
+    healthContainer.Size = UDim2.new(0, 160, 0, 20)
+    healthContainer.Position = UDim2.new(0.5, -80, 0, 42)
+    healthContainer.BackgroundColor3 = currentTheme.background
+    healthContainer.BackgroundTransparency = 0.1
+    healthContainer.Visible = false
+    healthContainer.Parent = gui
+    Instance.new("UICorner", healthContainer).CornerRadius = UDim.new(0, 10)
+    local healthContainerStroke = Instance.new("UIStroke", healthContainer)
+    healthContainerStroke.Thickness = 2
+    animatedElements[healthContainerStroke] = "stroke"
+    
+    -- Health bar fill
+    local healthBar = Instance.new("Frame")
+    healthBar.Size = UDim2.new(1, -8, 1, -8)
+    healthBar.Position = UDim2.new(0, 4, 0, 4)
+    healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+    healthBar.BorderSizePixel = 0
+    healthBar.Parent = healthContainer
+    Instance.new("UICorner", healthBar).CornerRadius = UDim.new(0, 6)
+    
+    -- Health text
+    local healthText = Instance.new("TextLabel")
+    healthText.Size = UDim2.new(1, 0, 1, 0)
+    healthText.BackgroundTransparency = 1
+    healthText.TextColor3 = Color3.new(1, 1, 1)
+    healthText.Font = Enum.Font.GothamBold
+    healthText.TextSize = 11
+    healthText.Text = "100/100"
+    healthText.Parent = healthContainer
+
     connect(RunService.Heartbeat, function()
-        guiEnv.lockedOn = lockedOn
-        guiEnv.currentTarget = currentTarget
-        guiEnv.currentTargetType = currentTargetType
-        guiEnv.currentTheme = currentTheme
-        guiEnv.tooltipsEnabled = tooltipsEnabled
+        if indicator.Parent then
+            if lockedOn and currentTarget then
+                indicator.Visible = true
+                healthContainer.Visible = true
+                indicator.Text = (currentTargetType == "npc" and "👾 " or "🎯 ") .. tostring(currentTarget.Name or "Unknown")
+                
+                -- Get target health
+                local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
+                if targetChar then
+                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        local hp = math.floor(hum.Health)
+                        local maxHp = math.floor(hum.MaxHealth)
+                        local ratio = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                        
+                        -- Update health bar size
+                        healthBar.Size = UDim2.new(ratio * (1 - 8/160), 0, 1, -8)
+                        
+                        -- Update health bar color (green -> yellow -> red)
+                        if ratio > 0.5 then
+                            healthBar.BackgroundColor3 = Color3.fromRGB(0, 255, 100)
+                        elseif ratio > 0.25 then
+                            healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+                        else
+                            healthBar.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+                        end
+                        
+                        healthText.Text = hp .. "/" .. maxHp
+                    else
+                        healthText.Text = "???"
+                        healthBar.Size = UDim2.new(0, 0, 1, -8)
+                    end
+                end
+            else
+                indicator.Visible = false
+                healthContainer.Visible = false
+            end
+        end
     end)
 end
 
 buildGui()
-
 
 -- Auto-enable custom shiftlock if setting is on OR if it was previously enabled
 if shiftlockAutoEnable or customShiftlockEnabled then
