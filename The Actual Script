@@ -261,12 +261,17 @@ end
 local ShiftLockModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/ShiftLockModule.lua")
 local TargetingModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTargetingModule.lua")
 local VisualModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnVisualModule.lua")
+local TooltipModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTooltipModule.lua")
+local GameFunctionsModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnGameFunctionsModule.lua")
+local SaveLoadModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnSaveLoadModule.lua")
 
 local shiftLock = ShiftLockModule and ShiftLockModule.new(localPlayer)
 local friendlies = {}
 local targeting = TargetingModule and TargetingModule.new(localPlayer, camera)
 if targeting then targeting:SetFriendliesTable(friendlies) end
 local visuals = VisualModule and VisualModule.new(localPlayer)
+local gameFuncs = GameFunctionsModule and GameFunctionsModule.new()
+local saveLoad = SaveLoadModule and SaveLoadModule.new()
 local lockCamToggleEnabled = false
 local lockCamToggleActive = false
 local lockCamToggleMode = "Hold"
@@ -409,13 +414,16 @@ local tooltipsEnabled, tooltipLabel, currentHover = false, nil, nil
 local function setupTooltip(gui)
     tooltipLabel = Instance.new("TextLabel")
     tooltipLabel.Name = "Tooltip"
-    tooltipLabel.AutomaticSize = Enum.AutomaticSize.XY
+    tooltipLabel.Size = UDim2.new(0, 280, 0, 0)
+    tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
     tooltipLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     tooltipLabel.BackgroundTransparency = 0.1
     tooltipLabel.BorderSizePixel = 0
     tooltipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     tooltipLabel.Font = Enum.Font.Gotham
     tooltipLabel.TextSize = 11
+    tooltipLabel.TextWrapped = true
+    tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
     tooltipLabel.Visible = false
     tooltipLabel.ZIndex = 9999
     tooltipLabel.Parent = gui
@@ -461,9 +469,18 @@ local function playClickSound()
     end)
 end
 
-local function toggleTooltips() 
+local function toggleTooltips()
     tooltipsEnabled = not tooltipsEnabled
-    if not tooltipsEnabled and tooltipLabel then tooltipLabel.Visible = false end 
+    if not tooltipsEnabled and tooltipLabel then tooltipLabel.Visible = false end
+end
+
+-- Helper to get tooltip text from module, with fallback
+local function tip(category, key, fallback)
+    if TooltipModule then
+        local t = TooltipModule:Get(category, key)
+        if t then return t end
+    end
+    return fallback or ""
 end
 
 connect(RunService.RenderStepped, function()
@@ -512,97 +529,23 @@ local lockOnPlusEnabled = false -- LockOn+: rotate character to face target whil
 local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 
 --==================================================
--- GAME-SPECIFIC FUNCTIONS
+-- GAME-SPECIFIC FUNCTIONS (via GameFunctionsModule)
 --==================================================
 
--- Available games with functions (add more here)
-local AVAILABLE_GAMES = {
-    {
-        name = "JJS",
-        ids = {"3508322461"},
-        functions = {
-            {
-                name = "Nanami Perfect Special",
-                description = "Auto-time R special based on target HP (27 stud range)",
-                enabled = false,
-                execute = function(target)
-                    if not target then return end
-                    local targetChar = target.Character
-                    if not targetChar then return end
-                    
-                    -- Check distance (must be within 27 studs)
-                    local myChar = game.Players.LocalPlayer.Character
-                    if not myChar then return end
-                    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-                    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
-                    if not myRoot or not targetRoot then return end
-                    
-                    local distance = (myRoot.Position - targetRoot.Position).Magnitude
-                    if distance > 27 then return end -- Too far away
-                    
-                    local hum = targetChar:FindFirstChildOfClass("Humanoid")
-                    if not hum then return end
-                    
-                    local hp = hum.Health
-                    local maxHp = hum.MaxHealth
-                    local hpPercent = (hp / maxHp) * 100
-                    
-                    -- Determine wait time based on health
-                    local waitTime = 0.63 -- Default for 100-80%
-                    if hpPercent < 80 then
-                        waitTime = 0.55 -- 80-0%
-                    end
-                    
-                    task.delay(waitTime, function()
-                        pcall(function()
-                            local args = { targetChar }
-                            game:GetService("ReplicatedStorage").Knit.Knit.Services.NanamiService.RE.RightActivated:FireServer(unpack(args))
-                        end)
-                    end)
-                end
-            }
-        }
-    },
-    -- Add more games here:
-    -- {
-    --     name = "Game Name",
-    --     ids = {"id1", "id2"},
-    --     functions = { ... }
-    -- },
-}
+-- Compatibility wrappers for inline code that references these
+local selectedGame = gameFuncs and gameFuncs:GetSelectedGame() or nil
+local gameFunctionStates = gameFuncs and gameFuncs.functionStates or {}
 
-local selectedGame = nil -- Currently selected game
-local gameFunctionStates = {} -- Track enabled/disabled state of each function
-
--- Get list of game names for autofill
 local function getGameNames()
-    local names = {}
-    for _, game in ipairs(AVAILABLE_GAMES) do
-        table.insert(names, game.name)
-    end
-    return names
+    return gameFuncs and gameFuncs:GetGameNames() or {}
 end
 
--- Find game by name
 local function findGameByName(name)
-    for _, game in ipairs(AVAILABLE_GAMES) do
-        if game.name:lower() == name:lower() then
-            return game
-        end
-    end
-    return nil
+    return gameFuncs and gameFuncs:FindGameByName(name) or nil
 end
 
--- Find games matching partial name (for autofill)
 local function findMatchingGames(partial)
-    local matches = {}
-    partial = partial:lower()
-    for _, game in ipairs(AVAILABLE_GAMES) do
-        if game.name:lower():sub(1, #partial) == partial then
-            table.insert(matches, game.name)
-        end
-    end
-    return matches
+    return gameFuncs and gameFuncs:FindMatchingGames(partial) or {}
 end
 
 --==================================================
@@ -632,119 +575,88 @@ local themeButtons = {}
 local lockCamToggleBtn, lockCamToggleModeBtn, lockCamToggleKeyBtn
 
 --==================================================
--- SAVE/LOAD SYSTEM
+-- SAVE/LOAD SYSTEM (via SaveLoadModule)
 --==================================================
 
-local SAVE_KEY = "LockOnCameraSettings_v4"
+local function getSettingsState()
+    return {
+        currentThemeName = currentThemeName,
+        autoSwapEnabled = autoSwapEnabled,
+        closeSwapEnabled = closeSwapEnabled,
+        visibilityCheckEnabled = visibilityCheckEnabled,
+        checkHealthEnabled = checkHealthEnabled,
+        autoRelockEnabled = autoRelockEnabled,
+        realisticEnabled = realisticEnabled,
+        rangeLimit = rangeLimit,
+        lockHeightOffset = lockHeightOffset,
+        highlightEnabled = visuals and visuals:IsHighlightEnabled() or false,
+        highlightSecondEnabled = visuals and visuals:IsHighlightSecondEnabled() or false,
+        selfFadeEnabled = visuals and visuals:IsSelfFadeEnabled() or false,
+        reverseLockEnabled = reverseLockEnabled,
+        perfectOffsetEnabled = perfectOffsetEnabled,
+        mouseTargetMode = mouseTargetMode,
+        npcModeEnabled = npcModeEnabled,
+        predictionEnabled = predictionEnabled,
+        forceCameraMode = forceCameraMode,
+        customShiftlockEnabled = customShiftlockEnabled,
+        shiftlockAutoEnable = shiftlockAutoEnable,
+        shiftlockKeyEnabled = shiftlockKeyEnabled,
+        mouseResistanceEnabled = mouseResistanceEnabled,
+        mouseResistanceScale = mouseResistanceScale,
+        lockOnPlusEnabled = lockOnPlusEnabled,
+        lockCamToggleEnabled = lockCamToggleEnabled,
+        lockCamToggleMode = lockCamToggleMode,
+        lockCamToggleKeybind = lockCamToggleKeybind,
+        keybinds = keybinds,
+    }
+end
 
 local function saveSettings()
-    local success = pcall(function()
-        local data = {
-            theme = currentThemeName,
-            autoSwapEnabled = autoSwapEnabled,
-            autoSwapEnabled = autoSwapEnabled,
-            closeSwapEnabled = closeSwapEnabled,
-            visibilityCheckEnabled = visibilityCheckEnabled,
-            checkHealthEnabled = checkHealthEnabled,
-            autoRelockEnabled = autoRelockEnabled,
-            realisticEnabled = realisticEnabled,
-            rangeLimit = rangeLimit,
-            lockHeightOffset = lockHeightOffset,
-            highlightEnabled = visuals and visuals:IsHighlightEnabled() or false,
-            highlightSecondEnabled = visuals and visuals:IsHighlightSecondEnabled() or false,
-            selfFadeEnabled = visuals and visuals:IsSelfFadeEnabled() or false,
-            reverseLockEnabled = reverseLockEnabled,
-            perfectOffsetEnabled = perfectOffsetEnabled,
-            mouseTargetMode = mouseTargetMode,
-            npcModeEnabled = npcModeEnabled,
-            predictionEnabled = predictionEnabled,
-            forceCameraMode = forceCameraMode,
-            customShiftlockEnabled = customShiftlockEnabled,
-            shiftlockAutoEnable = shiftlockAutoEnable,
-            shiftlockKeyEnabled = shiftlockKeyEnabled,
-            mouseResistanceEnabled = mouseResistanceEnabled,
-            mouseResistanceScale = mouseResistanceScale,
-            lockOnPlusEnabled = lockOnPlusEnabled,
-            kb_LockOn = keybinds.LockOn.Name,
-            kb_SwapTarget = keybinds.SwapTarget.Name,
-            kb_ReverseLock = keybinds.ReverseLock.Name,
-            kb_ShiftLock = keybinds.ShiftLock.Name,
-            kb_LockOnPlus = keybinds.LockOnPlus.Name,
-            lockCamToggleEnabled = lockCamToggleEnabled,
-            lockCamToggleMode = lockCamToggleMode,
-            kb_LockCamToggle = lockCamToggleKeybind.Name,
-        }
-        if writefile then
-            writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
-        end
-    end)
-    return success
+    if not saveLoad then return false end
+    return saveLoad:Save(getSettingsState())
 end
 
 local function loadSettingsData()
-    local success, data = pcall(function()
-        if not readfile or not isfile then return nil end
-        for _, key in ipairs({SAVE_KEY, "LockOnCameraSettings_v3", "LockOnCameraSettings_v2"}) do
-            if isfile(key .. ".json") then
-                return HttpService:JSONDecode(readfile(key .. ".json"))
-            end
-        end
-        return nil
-    end)
-    return success and data or nil
+    if not saveLoad then return nil end
+    return saveLoad:Load()
 end
 
 local function applySettingsData(data)
-    if not data then return false end
-    
-    if data.theme and THEMES[data.theme] then
-        currentThemeName = data.theme
-        currentTheme = THEMES[data.theme]
-    end
-    
-    autoSwapEnabled = (data.autoSwapEnabled == true)
-    autoSwapEnabled = (data.autoSwapEnabled == true)
-    closeSwapEnabled = (data.closeSwapEnabled == true)
-    visibilityCheckEnabled = (data.visibilityCheckEnabled == true)
-    checkHealthEnabled = (data.checkHealthEnabled == true)
-    autoRelockEnabled = (data.autoRelockEnabled == true)
-    realisticEnabled = (data.realisticEnabled == true)
-    reverseLockEnabled = (data.reverseLockEnabled == true)
-    perfectOffsetEnabled = (data.perfectOffsetEnabled == true)
-    mouseTargetMode = (data.mouseTargetMode == true)
-    npcModeEnabled = (data.npcModeEnabled == true)
-    predictionEnabled = (data.predictionEnabled == true)
-    forceCameraMode = (data.forceCameraMode == true)
-    customShiftlockEnabled = (data.customShiftlockEnabled == true)
-    shiftlockAutoEnable = (data.shiftlockAutoEnable == true)
-    shiftlockKeyEnabled = (data.shiftlockKeyEnabled ~= false)
-    mouseResistanceEnabled = (data.mouseResistanceEnabled == true)
-    lockOnPlusEnabled = (data.lockOnPlusEnabled == true)
-    
-    rangeLimit = tonumber(data.rangeLimit) or 0
-    lockHeightOffset = tonumber(data.lockHeightOffset) or 0
-    mouseResistanceScale = tonumber(data.mouseResistanceScale) or 0.3
-    
-    -- New keybind format
-    if data.kb_LockOn and Enum.KeyCode[data.kb_LockOn] then keybinds.LockOn = Enum.KeyCode[data.kb_LockOn] end
-    if data.kb_SwapTarget and Enum.KeyCode[data.kb_SwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.kb_SwapTarget] end
-    if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
-    if data.kb_ShiftLock and Enum.KeyCode[data.kb_ShiftLock] then keybinds.ShiftLock = Enum.KeyCode[data.kb_ShiftLock] end
-    if data.kb_LockOnPlus and Enum.KeyCode[data.kb_LockOnPlus] then keybinds.LockOnPlus = Enum.KeyCode[data.kb_LockOnPlus] end
-    if data.lockCamToggleEnabled ~= nil then lockCamToggleEnabled = (data.lockCamToggleEnabled == true) end
-    if data.lockCamToggleMode == "Hold" or data.lockCamToggleMode == "Toggle" then lockCamToggleMode = data.lockCamToggleMode end
-    if data.kb_LockCamToggle and Enum.KeyCode[data.kb_LockCamToggle] then lockCamToggleKeybind = Enum.KeyCode[data.kb_LockCamToggle] end
-    
-    -- Old formats
-    if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
-    if data.keybindSwapTarget and Enum.KeyCode[data.keybindSwapTarget] then keybinds.SwapTarget = Enum.KeyCode[data.keybindSwapTarget] end
-    if data.keybindReverseLock and Enum.KeyCode[data.keybindReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.keybindReverseLock] end
-    if data.keybinds then
-        for k, v in pairs(data.keybinds) do
-            if Enum.KeyCode[v] then keybinds[k] = Enum.KeyCode[v] end
-        end
-    end
-    
+    if not saveLoad or not data then return false end
+
+    local state = {
+        keybinds = keybinds,
+    }
+    local success = saveLoad:Apply(data, state, THEMES)
+    if not success then return false end
+
+    -- Apply state back to locals
+    if state.currentThemeName then currentThemeName = state.currentThemeName end
+    if state.currentTheme then currentTheme = state.currentTheme end
+    autoSwapEnabled = state.autoSwapEnabled or false
+    closeSwapEnabled = state.closeSwapEnabled or false
+    visibilityCheckEnabled = state.visibilityCheckEnabled or false
+    checkHealthEnabled = state.checkHealthEnabled or false
+    autoRelockEnabled = state.autoRelockEnabled or false
+    realisticEnabled = state.realisticEnabled or false
+    reverseLockEnabled = state.reverseLockEnabled or false
+    perfectOffsetEnabled = state.perfectOffsetEnabled or false
+    mouseTargetMode = state.mouseTargetMode or false
+    npcModeEnabled = state.npcModeEnabled or false
+    predictionEnabled = state.predictionEnabled or false
+    forceCameraMode = state.forceCameraMode or false
+    customShiftlockEnabled = state.customShiftlockEnabled or false
+    shiftlockAutoEnable = state.shiftlockAutoEnable or false
+    shiftlockKeyEnabled = state.shiftlockKeyEnabled ~= false
+    mouseResistanceEnabled = state.mouseResistanceEnabled or false
+    lockOnPlusEnabled = state.lockOnPlusEnabled or false
+    rangeLimit = state.rangeLimit or 0
+    lockHeightOffset = state.lockHeightOffset or 0
+    mouseResistanceScale = state.mouseResistanceScale or 0.3
+    if state.lockCamToggleEnabled ~= nil then lockCamToggleEnabled = state.lockCamToggleEnabled end
+    if state.lockCamToggleMode then lockCamToggleMode = state.lockCamToggleMode end
+    if state.lockCamToggleKeybind then lockCamToggleKeybind = state.lockCamToggleKeybind end
+
     if visuals then
         pcall(function()
             visuals:SetHighlightEnabled(data.highlightEnabled == true)
@@ -752,7 +664,7 @@ local function applySettingsData(data)
             visuals:SetSelfFadeEnabled(data.selfFadeEnabled == true)
         end)
     end
-    
+
     return true
 end
 
@@ -1005,7 +917,48 @@ function rebuildFriendsList()
         local uiList = Instance.new("UIListLayout", friendsList)
         uiList.SortOrder = Enum.SortOrder.LayoutOrder
         uiList.Padding = UDim.new(0, 3)
-        local idx = 0
+
+        -- Check if all players are friendly
+        local allFriendly = true
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= localPlayer and not isFriendly(plr) then
+                allFriendly = false
+                break
+            end
+        end
+
+        -- "All" button at the top
+        local allBtn = Instance.new("TextButton")
+        allBtn.Size = UDim2.new(1, -6, 0, 24)
+        allBtn.BackgroundColor3 = allFriendly and currentTheme.primary1 or currentTheme.secondary
+        allBtn.TextColor3 = currentTheme.text
+        allBtn.Font = Enum.Font.GothamBold
+        allBtn.TextSize = 12
+        allBtn.Text = "All" .. (allFriendly and " ✓" or "")
+        allBtn.BorderSizePixel = 0
+        allBtn.LayoutOrder = 0
+        allBtn.Parent = friendsList
+        Instance.new("UICorner", allBtn).CornerRadius = UDim.new(0, 6)
+        allBtn.MouseButton1Click:Connect(function()
+            playClickSound()
+            if allFriendly then
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= localPlayer then
+                        friendlies[plr.UserId] = nil
+                    end
+                end
+            else
+                for _, plr in ipairs(Players:GetPlayers()) do
+                    if plr ~= localPlayer then
+                        friendlies[plr.UserId] = true
+                        if currentTarget == plr then lockedOn, currentTarget = false, nil end
+                    end
+                end
+            end
+            rebuildFriendsList()
+        end)
+
+        local idx = 1 -- start at 1 because "All" is index 0
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= localPlayer then
                 idx += 1
@@ -1017,6 +970,7 @@ function rebuildFriendsList()
                 item.TextSize = 12
                 item.Text = plr.Name .. (isFriendly(plr) and " ✓" or "")
                 item.BorderSizePixel = 0
+                item.LayoutOrder = idx
                 item.Parent = friendsList
                 Instance.new("UICorner", item).CornerRadius = UDim.new(0, 6)
                 item.MouseButton1Click:Connect(function()
@@ -1824,7 +1778,7 @@ local function buildGui()
     infoToggleButton.BorderSizePixel = 0
     infoToggleButton.Parent = mainFrame
     Instance.new("UICorner", infoToggleButton).CornerRadius = UDim.new(0, 8)
-    addTooltip(infoToggleButton, "Toggle tooltips")
+    addTooltip(infoToggleButton, TooltipModule and TooltipModule.InfoToggle or "Toggle tooltips")
 
     extraSettingsButton = Instance.new("TextButton")
     extraSettingsButton.Size = UDim2.new(0, 70, 0, 24)
@@ -1917,12 +1871,12 @@ local function buildGui()
     targetPage.Parent = mainFrame
 
     -- MAIN PAGE
-    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Auto-swap on death")
-    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "Target closest")
-    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Swap if hidden")
-    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skip dead targets")
-    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "Re-lock auto")
-    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Front only")
+    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", tip("Main", "Autoswap", "Auto-swap on death"))
+    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", tip("Main", "CloseSwap", "Target closest"))
+    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", tip("Main", "VisibilityCheck", "Swap if hidden"))
+    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", tip("Main", "CheckHealth", "Skip dead targets"))
+    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", tip("Main", "AutoRelock", "Re-lock auto"))
+    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", tip("Main", "Realistic", "Front only"))
 
     heightLabel = Instance.new("TextLabel")
     heightLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -1978,9 +1932,9 @@ local function buildGui()
     Instance.new("UICorner", rangeInput).CornerRadius = UDim.new(0, 6)
 
     -- VISUAL PAGE
-    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Glow target")
-    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Highlight #2")
-    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Fade self")
+    highlightButton = createButton(visualPage, 0, "Highlight: OFF", tip("Visual", "Highlight", "Glow target"))
+    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", tip("Visual", "HighlightSecond", "Highlight #2"))
+    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", tip("Visual", "SelfFade", "Fade self"))
 
     local themeLabel = Instance.new("TextLabel")
     themeLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2013,7 +1967,7 @@ local function buildGui()
     end
 
     local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
-    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Override all shiftlocks")
+    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", tip("Visual", "CustomShiftlock", "Override all shiftlocks"))
     
     -- Shiftlock key with On/Off toggle
     shiftlockKeyButton = Instance.new("TextButton")
@@ -2027,7 +1981,7 @@ local function buildGui()
     shiftlockKeyButton.BackgroundColor3 = currentTheme.secondary
     shiftlockKeyButton.Parent = visualPage
     Instance.new("UICorner", shiftlockKeyButton).CornerRadius = UDim.new(0, 6)
-    addTooltip(shiftlockKeyButton, "Change key")
+    addTooltip(shiftlockKeyButton, tip("Visual", "ShiftlockKey", "Change key"))
     
     shiftlockKeyToggleButton = Instance.new("TextButton")
     shiftlockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
@@ -2040,9 +1994,9 @@ local function buildGui()
     shiftlockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
     shiftlockKeyToggleButton.Parent = visualPage
     Instance.new("UICorner", shiftlockKeyToggleButton).CornerRadius = UDim.new(0, 6)
-    addTooltip(shiftlockKeyToggleButton, "Enable/disable keybind")
+    addTooltip(shiftlockKeyToggleButton, tip("Visual", "ShiftlockKeyToggle", "Enable/disable keybind"))
     
-    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Enable on load")
+    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", tip("Visual", "ShiftlockAutoEnable", "Enable on load"))
     
     visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 100)
 
@@ -2058,10 +2012,10 @@ local function buildGui()
     keysLabel.Text = "⌨ Keybinds:"
     keysLabel.Parent = targetPage
 
-    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Toggle lock")
-    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Next target")
+    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", tip("Target", "LockOnKey", "Toggle lock"))
+    swapKeyButton = createButton(targetPage, 56, "Swap: C", tip("Target", "SwapKey", "Next target"))
 
-    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Cursor target")
+    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", tip("Target", "MouseTarget", "Cursor target"))
 
     local friendsLabel = Instance.new("TextLabel")
     friendsLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2131,26 +2085,26 @@ local function buildGui()
     extraScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 460)
     extraScrollFrame.Parent = extraSettingsFrame
 
-    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", "Face away")
+    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", tip("Extra", "ReverseLock", "Face away"))
     reverseLockButton.Position = UDim2.new(0, 5, 0, 0); reverseLockButton.Size = UDim2.new(1, -10, 0, 28)
 
-    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", "Hold reverse")
+    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", tip("Extra", "ReverseKey", "Hold reverse"))
     reverseKeyButton.Position = UDim2.new(0, 5, 0, 32); reverseKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
-    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", "Aim offset")
+    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", tip("Extra", "PerfectOffset", "Aim offset"))
     perfectOffsetButton.Position = UDim2.new(0, 5, 0, 64); perfectOffsetButton.Size = UDim2.new(1, -10, 0, 28)
 
-    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", "Target NPCs")
+    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", tip("Extra", "NPCMode", "Target NPCs"))
     npcModeButton.Position = UDim2.new(0, 5, 0, 96); npcModeButton.Size = UDim2.new(1, -10, 0, 28)
 
-    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", "Aim ahead")
+    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", tip("Extra", "Prediction", "Aim ahead"))
     predictionButton.Position = UDim2.new(0, 5, 0, 128); predictionButton.Size = UDim2.new(1, -10, 0, 28)
 
-    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", "Override game camera")
+    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", tip("Extra", "ForceCamera", "Override game camera"))
     forceCameraButton.Position = UDim2.new(0, 5, 0, 160); forceCameraButton.Size = UDim2.new(1, -10, 0, 28)
 
     -- Mouse Resistance toggle and slider
-    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", "Allow pulling away")
+    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", tip("Extra", "MouseResistance", "Allow pulling away"))
     mouseResistanceButton.Position = UDim2.new(0, 5, 0, 192); mouseResistanceButton.Size = UDim2.new(1, -10, 0, 28)
     
     mouseResistanceLabel = Instance.new("TextLabel")
@@ -2183,18 +2137,18 @@ local function buildGui()
     Instance.new("UICorner", mouseResistanceSliderKnob).CornerRadius = UDim.new(1, 0)
     
     -- LockOn+ toggle and keybind
-    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", "Rotate body to target")
+    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", tip("Extra", "LockOnPlus", "Rotate body to target"))
     lockOnPlusButton.Position = UDim2.new(0, 5, 0, 260); lockOnPlusButton.Size = UDim2.new(1, -10, 0, 28)
-    
-    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", "Hold to activate")
+
+    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", tip("Extra", "LockOnPlusKey", "Hold to activate"))
     lockOnPlusKeyButton.Position = UDim2.new(0, 5, 0, 292); lockOnPlusKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
     -- LockCamToggle
-    lockCamToggleBtn = createButton(extraScrollFrame, 324, "LockCamToggle: OFF", "Lock target without forcing camera")
+    lockCamToggleBtn = createButton(extraScrollFrame, 324, "LockCamToggle: OFF", tip("Extra", "LockCamToggle", "Lock target without forcing camera"))
     lockCamToggleBtn.Position = UDim2.new(0, 5, 0, 324); lockCamToggleBtn.Size = UDim2.new(1, -10, 0, 28)
-    lockCamToggleModeBtn = createButton(extraScrollFrame, 356, "Mode: Hold", "Hold or Toggle")
+    lockCamToggleModeBtn = createButton(extraScrollFrame, 356, "Mode: Hold", tip("Extra", "LockCamToggleMode", "Hold or Toggle"))
     lockCamToggleModeBtn.Position = UDim2.new(0, 5, 0, 356); lockCamToggleModeBtn.Size = UDim2.new(1, -10, 0, 28)
-    lockCamToggleKeyBtn = createButton(extraScrollFrame, 388, "LockCam Key: F", "Set keybind")
+    lockCamToggleKeyBtn = createButton(extraScrollFrame, 388, "LockCam Key: F", tip("Extra", "LockCamToggleKey", "Set keybind"))
     lockCamToggleKeyBtn.Position = UDim2.new(0, 5, 0, 388); lockCamToggleKeyBtn.Size = UDim2.new(1, -10, 0, 28)
     connect(lockCamToggleBtn.MouseButton1Click, function() playClickSound(); lockCamToggleEnabled = not lockCamToggleEnabled; if not lockCamToggleEnabled then lockCamToggleActive = false end; refreshAllUI() end)
     connect(lockCamToggleModeBtn.MouseButton1Click, function() playClickSound(); lockCamToggleMode = lockCamToggleMode == "Hold" and "Toggle" or "Hold"; lockCamToggleActive = false; refreshAllUI() end)
@@ -2202,7 +2156,7 @@ local function buildGui()
 
     -- GAME-SPECIFIC FUNCTIONS - Always show selector
     -- Game selector button
-    gameFunctionsButton = createButton(extraScrollFrame, 420, "🎮 Game Functions", "Select game for special features")
+    gameFunctionsButton = createButton(extraScrollFrame, 420, "🎮 Game Functions", tip("Extra", "GameFunctions", "Select game for special features"))
     gameFunctionsButton.Position = UDim2.new(0, 5, 0, 420); gameFunctionsButton.Size = UDim2.new(1, -10, 0, 28)
     gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
 
