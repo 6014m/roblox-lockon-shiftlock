@@ -1005,7 +1005,32 @@ function rebuildFriendsList()
         local uiList = Instance.new("UIListLayout", friendsList)
         uiList.SortOrder = Enum.SortOrder.LayoutOrder
         uiList.Padding = UDim.new(0, 3)
-        local idx = 0
+        local allFriendly = true
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= localPlayer and not isFriendly(p) then allFriendly = false; break end
+        end
+        local allBtn = Instance.new("TextButton")
+        allBtn.Size = UDim2.new(1, -6, 0, 24)
+        allBtn.BackgroundColor3 = allFriendly and currentTheme.primary1 or currentTheme.secondary
+        allBtn.TextColor3 = currentTheme.text
+        allBtn.Font = Enum.Font.GothamBold
+        allBtn.TextSize = 12
+        allBtn.Text = allFriendly and "All ✓" or "All"
+        allBtn.BorderSizePixel = 0
+        allBtn.LayoutOrder = 0
+        allBtn.Parent = friendsList
+        Instance.new("UICorner", allBtn).CornerRadius = UDim.new(0, 6)
+        allBtn.MouseButton1Click:Connect(function()
+            playClickSound()
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= localPlayer then
+                    if allFriendly then friendlies[p.UserId] = nil
+                    else friendlies[p.UserId] = true if currentTarget == p then lockedOn, currentTarget = false, nil end end
+                end
+            end
+            rebuildFriendsList()
+        end)
+        local idx = 1
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= localPlayer then
                 idx += 1
