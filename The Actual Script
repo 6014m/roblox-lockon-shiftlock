@@ -267,10 +267,6 @@ local friendlies = {}
 local targeting = TargetingModule and TargetingModule.new(localPlayer, camera)
 if targeting then targeting:SetFriendliesTable(friendlies) end
 local visuals = VisualModule and VisualModule.new(localPlayer)
-local lockCamToggleEnabled = false
-local lockCamToggleActive = false
-local lockCamToggleMode = "Hold"
-local lockCamToggleKeybind = Enum.KeyCode.F
 
 --==================================================
 -- ANIMATED THEMES
@@ -409,16 +405,13 @@ local tooltipsEnabled, tooltipLabel, currentHover = false, nil, nil
 local function setupTooltip(gui)
     tooltipLabel = Instance.new("TextLabel")
     tooltipLabel.Name = "Tooltip"
-    tooltipLabel.Size = UDim2.new(0, 260, 0, 0)
-    tooltipLabel.AutomaticSize = Enum.AutomaticSize.Y
+    tooltipLabel.AutomaticSize = Enum.AutomaticSize.XY
     tooltipLabel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
     tooltipLabel.BackgroundTransparency = 0.1
     tooltipLabel.BorderSizePixel = 0
     tooltipLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     tooltipLabel.Font = Enum.Font.Gotham
     tooltipLabel.TextSize = 11
-    tooltipLabel.TextWrapped = true
-    tooltipLabel.TextXAlignment = Enum.TextXAlignment.Left
     tooltipLabel.Visible = false
     tooltipLabel.ZIndex = 9999
     tooltipLabel.Parent = gui
@@ -495,6 +488,7 @@ local keybinds = {
     ReverseLock = Enum.KeyCode.B,
     ShiftLock = Enum.KeyCode.LeftShift,
     LockOnPlus = Enum.KeyCode.Q, -- Hold to rotate character toward target
+    LockCamToggle = Enum.KeyCode.F, -- Free camera while locked on
 }
 
 local waitingForKeybind = nil
@@ -513,6 +507,23 @@ local mouseResistanceEnabled = false -- Allow mouse to pull away from target
 local mouseResistanceScale = 0.5 -- -1 to 1: negative = more freedom, positive = more pull to target
 local lockOnPlusEnabled = false -- LockOn+: rotate character to face target while camera is free
 local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
+
+-- LockCamToggle - stays locked on target but camera moves freely
+local lockCamToggleEnabled = false -- Whether the feature is on
+local lockCamToggleMode = "Hold" -- "Hold" or "Toggle"
+local lockCamToggleActive = false -- Whether camera freedom is currently active
+local lockCamToggleHeld = false -- For hold mode tracking
+
+-- Weld detection for grab/stun mechanics (toggleable)
+local weldPauseEnabled = false -- Whether weld pause feature is enabled
+local weldPausedTarget = nil -- Store target when paused due to weld
+
+-- Teams mode - auto-friendly/unfriendly based on team
+local teamsModeEnabled = false
+local teamsModeConnection = nil
+local teamsPlayerConnections = {}
+local weldPausedType = nil -- Store target type when paused
+local isWeldPaused = false -- Whether lock is paused due to weld
 
 --==================================================
 -- GAME-SPECIFIC FUNCTIONS
@@ -619,7 +630,7 @@ local highlightButton, highlightSecondButton, selfFadeButton
 local autoswapButton, closeSwapButton, checkVisibilityButton, checkHealthButton
 local autoRelockButton, realisticButton, centerShiftlockButton
 local lockOnKeyButton, swapKeyButton
-local mouseTargetButton, friendsList
+local mouseTargetButton, friendsList, teamsModeButton
 local heightLabel, heightSliderBar, heightSliderKnob, rangeInput
 local extraSettingsFrame, extraSettingsButton, extraSettingsCloseButton
 local reverseLockButton, reverseKeyButton, perfectOffsetButton
@@ -627,12 +638,14 @@ local npcModeButton, predictionButton, forceCameraButton
 local shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton
 local mouseResistanceButton, mouseResistanceSliderBar, mouseResistanceSliderKnob, mouseResistanceLabel
 local lockOnPlusButton, lockOnPlusKeyButton
+local weldPauseButton
+local lockCamToggleButton, lockCamToggleModeButton, lockCamToggleKeyButton
+local extraScrollFrame
 local gameFunctionsButton, gameFunctionsFrame, gameFunctionsCloseButton
 local gameSelectInput, gameSelectList, gameSelectFrame
 local gameFunctionButtons = {}
 local saveButton, loadButton
 local themeButtons = {}
-local lockCamToggleBtn, lockCamToggleModeBtn, lockCamToggleKeyBtn
 
 --==================================================
 -- SAVE/LOAD SYSTEM
@@ -668,14 +681,16 @@ local function saveSettings()
             mouseResistanceEnabled = mouseResistanceEnabled,
             mouseResistanceScale = mouseResistanceScale,
             lockOnPlusEnabled = lockOnPlusEnabled,
+            weldPauseEnabled = weldPauseEnabled,
+            lockCamToggleEnabled = lockCamToggleEnabled,
+            lockCamToggleMode = lockCamToggleMode,
             kb_LockOn = keybinds.LockOn.Name,
             kb_SwapTarget = keybinds.SwapTarget.Name,
             kb_ReverseLock = keybinds.ReverseLock.Name,
             kb_ShiftLock = keybinds.ShiftLock.Name,
             kb_LockOnPlus = keybinds.LockOnPlus.Name,
-            lockCamToggleEnabled = lockCamToggleEnabled,
-            lockCamToggleMode = lockCamToggleMode,
-            kb_LockCamToggle = lockCamToggleKeybind.Name,
+            kb_LockCamToggle = keybinds.LockCamToggle.Name,
+            teamsModeEnabled = teamsModeEnabled,
         }
         if writefile then
             writefile(SAVE_KEY .. ".json", HttpService:JSONEncode(data))
@@ -723,7 +738,13 @@ local function applySettingsData(data)
     shiftlockKeyEnabled = (data.shiftlockKeyEnabled ~= false)
     mouseResistanceEnabled = (data.mouseResistanceEnabled == true)
     lockOnPlusEnabled = (data.lockOnPlusEnabled == true)
-    
+    weldPauseEnabled = (data.weldPauseEnabled == true)
+    lockCamToggleEnabled = (data.lockCamToggleEnabled == true)
+    teamsModeEnabled = (data.teamsModeEnabled == true)
+    if data.lockCamToggleMode == "Hold" or data.lockCamToggleMode == "Toggle" then
+        lockCamToggleMode = data.lockCamToggleMode
+    end
+
     rangeLimit = tonumber(data.rangeLimit) or 0
     lockHeightOffset = tonumber(data.lockHeightOffset) or 0
     mouseResistanceScale = tonumber(data.mouseResistanceScale) or 0.3
@@ -734,9 +755,7 @@ local function applySettingsData(data)
     if data.kb_ReverseLock and Enum.KeyCode[data.kb_ReverseLock] then keybinds.ReverseLock = Enum.KeyCode[data.kb_ReverseLock] end
     if data.kb_ShiftLock and Enum.KeyCode[data.kb_ShiftLock] then keybinds.ShiftLock = Enum.KeyCode[data.kb_ShiftLock] end
     if data.kb_LockOnPlus and Enum.KeyCode[data.kb_LockOnPlus] then keybinds.LockOnPlus = Enum.KeyCode[data.kb_LockOnPlus] end
-    if data.lockCamToggleEnabled ~= nil then lockCamToggleEnabled = (data.lockCamToggleEnabled == true) end
-    if data.lockCamToggleMode == "Hold" or data.lockCamToggleMode == "Toggle" then lockCamToggleMode = data.lockCamToggleMode end
-    if data.kb_LockCamToggle and Enum.KeyCode[data.kb_LockCamToggle] then lockCamToggleKeybind = Enum.KeyCode[data.kb_LockCamToggle] end
+    if data.kb_LockCamToggle and Enum.KeyCode[data.kb_LockCamToggle] then keybinds.LockCamToggle = Enum.KeyCode[data.kb_LockCamToggle] end
     
     -- Old formats
     if data.keybindLockOn and Enum.KeyCode[data.keybindLockOn] then keybinds.LockOn = Enum.KeyCode[data.keybindLockOn] end
@@ -908,10 +927,11 @@ local function refreshAllUI()
             mouseResistanceSliderKnob.Position = UDim2.new((mouseResistanceScale + 1) / 2, 0, 0.5, 0)
         end
         if lockOnPlusButton then lockOnPlusButton.Text = "LockOn+: " .. (lockOnPlusEnabled and "ON" or "OFF") end
+        if weldPauseButton then weldPauseButton.Text = "Weld Pause: " .. (weldPauseEnabled and "ON" or "OFF") end
+        if lockCamToggleButton then lockCamToggleButton.Text = "LockCamToggle: " .. (lockCamToggleEnabled and "ON" or "OFF") end
+        if lockCamToggleModeButton then lockCamToggleModeButton.Text = "Mode: " .. lockCamToggleMode end
+        if lockCamToggleKeyButton then lockCamToggleKeyButton.Text = "LockCam Key: " .. keyCodeToText(keybinds.LockCamToggle) end
         if lockOnPlusKeyButton then lockOnPlusKeyButton.Text = "LockOn+ Key: " .. keyCodeToText(keybinds.LockOnPlus) end
-        if lockCamToggleBtn then lockCamToggleBtn.Text = "LockCamToggle: " .. (lockCamToggleEnabled and "ON" or "OFF") end
-        if lockCamToggleModeBtn then lockCamToggleModeBtn.Text = "Mode: " .. lockCamToggleMode end
-        if lockCamToggleKeyBtn then lockCamToggleKeyBtn.Text = "LockCam Key: " .. lockCamToggleKeybind.Name end
         if centerShiftlockButton then centerShiftlockButton.Text = "Custom Shiftlock: " .. (customShiftlockEnabled and "ON" or "OFF") end
         if shiftlockKeyButton then shiftlockKeyButton.Text = "Shiftlock Key: " .. keyCodeToText(keybinds.ShiftLock) end
         if shiftlockKeyToggleButton then shiftlockKeyToggleButton.Text = shiftlockKeyEnabled and "On" or "Off" end
@@ -924,6 +944,7 @@ local function refreshAllUI()
             heightSliderKnob.Position = UDim2.new((lockHeightOffset - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN), 0, 0.5, 0) 
         end
         if rangeInput then rangeInput.Text = tostring(rangeLimit) end
+        if teamsModeButton then teamsModeButton.Text = "Teams Mode: " .. (teamsModeEnabled and "ON" or "OFF") end
     end)
 end
 
@@ -934,6 +955,7 @@ local function applyThemeToUI()
     pcall(function()
         if mainFrame then mainFrame.BackgroundColor3 = t.background end
         if extraSettingsFrame then extraSettingsFrame.BackgroundColor3 = t.background end
+        if extraScrollFrame and extraScrollFrame.Parent then extraScrollFrame.ScrollBarImageColor3 = t.primary1 end
         
         local btns = {
             closeBtn, infoToggleButton, tabMainButton, tabVisualButton, tabTargetButton,
@@ -943,9 +965,10 @@ local function applyThemeToUI()
             lockOnKeyButton, swapKeyButton,
             mouseTargetButton, extraSettingsButton, extraSettingsCloseButton,
             reverseLockButton, reverseKeyButton, perfectOffsetButton,
-            npcModeButton, predictionButton, forceCameraButton, mouseResistanceButton, lockOnPlusButton, lockOnPlusKeyButton, 
+            npcModeButton, predictionButton, forceCameraButton, mouseResistanceButton, lockOnPlusButton, lockOnPlusKeyButton, weldPauseButton,
+            lockCamToggleButton, lockCamToggleModeButton, lockCamToggleKeyButton,
             shiftlockKeyButton, shiftlockAutoEnableButton, shiftlockKeyToggleButton,
-            saveButton, loadButton
+            teamsModeButton, saveButton, loadButton
         }
         
         for _, b in ipairs(btns) do
@@ -953,9 +976,6 @@ local function applyThemeToUI()
                 b.BackgroundColor3 = t.secondary
                 b.TextColor3 = t.text
             end
-        end
-        for _, lb in ipairs({lockCamToggleBtn, lockCamToggleModeBtn, lockCamToggleKeyBtn}) do
-            if lb and lb.Parent then lb.BackgroundColor3 = t.secondary; lb.TextColor3 = t.text end
         end
         
         if openBtn and openBtn.Parent then
@@ -998,6 +1018,85 @@ local function setTheme(name)
 end
 
 --==================================================
+-- TEAMS MODE
+--==================================================
+
+local function syncTeamFriendlies()
+    if not teamsModeEnabled then return end
+    local myTeam = localPlayer.Team
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= localPlayer then
+            if myTeam and plr.Team == myTeam then
+                friendlies[plr.UserId] = true
+            else
+                friendlies[plr.UserId] = nil
+                if currentTarget == plr and friendlies[plr.UserId] then
+                    lockedOn, currentTarget = false, nil
+                end
+            end
+        end
+    end
+    pcall(function() rebuildFriendsList() end)
+end
+
+local function stopTeamsMode()
+    if teamsModeConnection then
+        pcall(function() teamsModeConnection:Disconnect() end)
+        teamsModeConnection = nil
+    end
+    for _, conn in ipairs(teamsPlayerConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    teamsPlayerConnections = {}
+end
+
+local function startTeamsMode()
+    stopTeamsMode()
+    syncTeamFriendlies()
+
+    -- Watch local player's team changes
+    teamsModeConnection = connect(localPlayer:GetPropertyChangedSignal("Team"), function()
+        syncTeamFriendlies()
+    end)
+
+    -- Watch existing players' team changes
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= localPlayer then
+            local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
+                syncTeamFriendlies()
+            end)
+            table.insert(teamsPlayerConnections, conn)
+        end
+    end
+
+    -- Watch new players joining
+    local addConn = connect(Players.PlayerAdded, function(plr)
+        local conn = connect(plr:GetPropertyChangedSignal("Team"), function()
+            syncTeamFriendlies()
+        end)
+        table.insert(teamsPlayerConnections, conn)
+        syncTeamFriendlies()
+    end)
+    table.insert(teamsPlayerConnections, addConn)
+
+    -- Watch players leaving
+    local removeConn = connect(Players.PlayerRemoving, function()
+        syncTeamFriendlies()
+    end)
+    table.insert(teamsPlayerConnections, removeConn)
+end
+
+local function toggleTeamsMode()
+    teamsModeEnabled = not teamsModeEnabled
+    if teamsModeEnabled then
+        startTeamsMode()
+    else
+        stopTeamsMode()
+    end
+    refreshAllUI()
+end
+
+--==================================================
 -- FRIENDLIES LIST
 --==================================================
 
@@ -1008,32 +1107,7 @@ function rebuildFriendsList()
         local uiList = Instance.new("UIListLayout", friendsList)
         uiList.SortOrder = Enum.SortOrder.LayoutOrder
         uiList.Padding = UDim.new(0, 3)
-        local allFriendly = true
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= localPlayer and not isFriendly(p) then allFriendly = false; break end
-        end
-        local allBtn = Instance.new("TextButton")
-        allBtn.Size = UDim2.new(1, -6, 0, 24)
-        allBtn.BackgroundColor3 = allFriendly and currentTheme.primary1 or currentTheme.secondary
-        allBtn.TextColor3 = currentTheme.text
-        allBtn.Font = Enum.Font.GothamBold
-        allBtn.TextSize = 12
-        allBtn.Text = allFriendly and "All ✓" or "All"
-        allBtn.BorderSizePixel = 0
-        allBtn.LayoutOrder = 0
-        allBtn.Parent = friendsList
-        Instance.new("UICorner", allBtn).CornerRadius = UDim.new(0, 6)
-        allBtn.MouseButton1Click:Connect(function()
-            playClickSound()
-            for _, p in ipairs(Players:GetPlayers()) do
-                if p ~= localPlayer then
-                    if allFriendly then friendlies[p.UserId] = nil
-                    else friendlies[p.UserId] = true if currentTarget == p then lockedOn, currentTarget = false, nil end end
-                end
-            end
-            rebuildFriendsList()
-        end)
-        local idx = 1
+        local idx = 0
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= localPlayer then
                 idx += 1
@@ -1094,6 +1168,7 @@ local function fullCleanup()
     pcall(function() if shiftLock then shiftLock:Destroy() end end)
     pcall(function() if visuals then visuals:Destroy() end end)
     pcall(function() if npcHighlight then npcHighlight:Destroy() end end)
+    pcall(function() stopTeamsMode() end)
     for id in pairs(friendlies) do friendlies[id] = nil end
     pcall(function() if gui then gui:Destroy() end end)
     animatedElements = {}
@@ -1310,6 +1385,91 @@ local function refreshVisuals()
 end
 
 --==================================================
+-- WELD PAUSE DETECTION
+--==================================================
+
+-- Check if any parts (not effects/remotes) are welded to the local player
+local function hasWeldedParts()
+    local myChar = localPlayer.Character
+    if not myChar then return false end
+    
+    for _, part in ipairs(myChar:GetDescendants()) do
+        if part:IsA("Weld") or part:IsA("WeldConstraint") or part:IsA("Motor6D") then
+            -- Check if this weld connects to something outside our character
+            local part0 = part.Part0
+            local part1 = part.Part1
+            
+            if part0 and part1 then
+                local part0InChar = part0:IsDescendantOf(myChar)
+                local part1InChar = part1:IsDescendantOf(myChar)
+                
+                -- If one part is in character and one is outside
+                if (part0InChar and not part1InChar) or (part1InChar and not part0InChar) then
+                    local externalPart = part0InChar and part1 or part0
+                    
+                    -- Check if it's a Part (not effect, sound, remote, etc)
+                    if externalPart:IsA("BasePart") then
+                        -- Ignore accessories and tools that are normally attached
+                        local parentName = externalPart.Parent and externalPart.Parent.Name or ""
+                        local partName = externalPart.Name:lower()
+                        
+                        -- Skip if it's likely an accessory or tool
+                        if not externalPart:IsDescendantOf(myChar) then
+                            -- This is an external part welded to us (likely a grab)
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Monitor for weld changes
+local function checkWeldPause()
+    if not weldPauseEnabled then return end
+    
+    local hasWelds = hasWeldedParts()
+    
+    if hasWelds and lockedOn and not isWeldPaused then
+        -- Pause lock - store target and unlock
+        weldPausedTarget = currentTarget
+        weldPausedType = currentTargetType
+        isWeldPaused = true
+        lockedOn = false
+        refreshVisuals()
+    elseif not hasWelds and isWeldPaused and weldPausedTarget then
+        -- Resume lock - relock to stored target
+        local targetStillValid = false
+        
+        if weldPausedType == "player" then
+            local char = weldPausedTarget.Character
+            if char and getRootPart(char) then
+                targetStillValid = true
+            end
+        else
+            if weldPausedTarget and getRootPart(weldPausedTarget) then
+                targetStillValid = true
+            end
+        end
+        
+        if targetStillValid then
+            currentTarget = weldPausedTarget
+            currentTargetType = weldPausedType
+            lockedOn = true
+            refreshVisuals()
+        end
+        
+        -- Clear pause state
+        isWeldPaused = false
+        weldPausedTarget = nil
+        weldPausedType = nil
+    end
+end
+
+--==================================================
 -- CAMERA UPDATE
 --==================================================
 
@@ -1323,8 +1483,9 @@ local lastPlayerLookDir = nil -- Track where player is trying to look for mouse 
 -- Only overrides ROTATION to look at target, keeps game's camera POSITION
 local function forceCameraUpdate()
     if not forceCameraMode or not lockedOn or not currentTarget then return end
+    -- LockCamToggle active - don't force camera rotation
     if lockCamToggleEnabled and lockCamToggleActive then return end
-    
+
     local cam = workspace.CurrentCamera
     if not cam then return end
     
@@ -1417,6 +1578,9 @@ local function setupForceCameraHooks()
 end
 
 local function updateCamera(dt)
+    -- Check for weld pause
+    checkWeldPause()
+    
     -- Get camera reference
     local cam = workspace.CurrentCamera
     
@@ -1498,13 +1662,9 @@ local function updateCamera(dt)
         return
     end
 
-    -- LockCamToggle: stay locked but free camera
+    -- LockCamToggle active - stay locked on target but don't force camera
     if lockCamToggleEnabled and lockCamToggleActive then
         lastTargetPos = targetRoot.Position
-        pcall(function()
-            if cam.CameraSubject ~= myHum then cam.CameraSubject = myHum end
-            cam.CameraType = Enum.CameraType.Custom
-        end)
         refreshVisuals()
         return
     end
@@ -1852,7 +2012,7 @@ local function buildGui()
     infoToggleButton.BorderSizePixel = 0
     infoToggleButton.Parent = mainFrame
     Instance.new("UICorner", infoToggleButton).CornerRadius = UDim.new(0, 8)
-    addTooltip(infoToggleButton, "Toggle detailed tooltips on/off. Hover over any setting to see what it does.")
+    addTooltip(infoToggleButton, "Toggle tooltips")
 
     extraSettingsButton = Instance.new("TextButton")
     extraSettingsButton.Size = UDim2.new(0, 70, 0, 24)
@@ -1945,12 +2105,12 @@ local function buildGui()
     targetPage.Parent = mainFrame
 
     -- MAIN PAGE
-    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Automatically switches to the nearest valid target when your current target dies, resets, or leaves the game.")
-    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "When swapping targets, always picks the closest player to you instead of cycling through all available targets.")
-    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Checks if your target is behind a wall. If hidden for too long, auto-swaps to a visible target using raycasting.")
-    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skips targets that are dead (0 HP) or have a ForceField active (spawn protection). Prevents locking onto invulnerable players.")
-    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "After your target dies or becomes invalid, automatically locks onto the next closest target without pressing the lock-on key again.")
-    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Only allows locking onto targets in front of your character (~120 degree cone). Prevents sudden 180-degree camera snaps.")
+    autoswapButton = createButton(mainPage, 0, "Autoswap: OFF", "Auto-swap on death")
+    closeSwapButton = createButton(mainPage, 32, "CloseSwap: OFF", "Target closest")
+    checkVisibilityButton = createButton(mainPage, 64, "Visibility check: OFF", "Swap if hidden")
+    checkHealthButton = createButton(mainPage, 96, "Check health/FF: OFF", "Skip dead targets")
+    autoRelockButton = createButton(mainPage, 128, "Auto relock: OFF", "Re-lock auto")
+    realisticButton = createButton(mainPage, 160, "Realistic (front): OFF", "Front only")
 
     heightLabel = Instance.new("TextLabel")
     heightLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2006,9 +2166,9 @@ local function buildGui()
     Instance.new("UICorner", rangeInput).CornerRadius = UDim.new(0, 6)
 
     -- VISUAL PAGE
-    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Adds a glowing highlight around your locked target, making them easier to see through particles and dark environments.")
-    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Also highlights the second-closest target with a dimmer glow so you can see who you'll swap to next.")
-    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Makes your own character semi-transparent while locked on. Reduces visual obstruction in third-person.")
+    highlightButton = createButton(visualPage, 0, "Highlight: OFF", "Glow target")
+    highlightSecondButton = createButton(visualPage, 32, "2nd closest: OFF", "Highlight #2")
+    selfFadeButton = createButton(visualPage, 64, "Self fade: OFF", "Fade self")
 
     local themeLabel = Instance.new("TextLabel")
     themeLabel.Size = UDim2.new(1, -10, 0, 20)
@@ -2041,7 +2201,7 @@ local function buildGui()
     end
 
     local afterThemes = 124 + math.ceil(ti / 2) * 30 + 10
-    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Replaces the default Roblox shift lock with a custom one. Your character always faces the camera direction. Works in games that disable built-in shift lock.")
+    centerShiftlockButton = createButton(visualPage, afterThemes, "Custom Shiftlock: OFF", "Override all shiftlocks")
     
     -- Shiftlock key with On/Off toggle
     shiftlockKeyButton = Instance.new("TextButton")
@@ -2055,7 +2215,7 @@ local function buildGui()
     shiftlockKeyButton.BackgroundColor3 = currentTheme.secondary
     shiftlockKeyButton.Parent = visualPage
     Instance.new("UICorner", shiftlockKeyButton).CornerRadius = UDim.new(0, 6)
-    addTooltip(shiftlockKeyButton, "Click then press any key to change the shiftlock keybind. Default: LeftShift.")
+    addTooltip(shiftlockKeyButton, "Change key")
     
     shiftlockKeyToggleButton = Instance.new("TextButton")
     shiftlockKeyToggleButton.Size = UDim2.new(0.28, 0, 0, 28)
@@ -2068,9 +2228,9 @@ local function buildGui()
     shiftlockKeyToggleButton.BackgroundColor3 = currentTheme.secondary
     shiftlockKeyToggleButton.Parent = visualPage
     Instance.new("UICorner", shiftlockKeyToggleButton).CornerRadius = UDim.new(0, 6)
-    addTooltip(shiftlockKeyToggleButton, "Enable or disable the shiftlock keyboard shortcut. When off, you can still toggle shiftlock through the UI button.")
+    addTooltip(shiftlockKeyToggleButton, "Enable/disable keybind")
     
-    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Automatically enables custom shiftlock when the script loads, without needing to press the key.")
+    shiftlockAutoEnableButton = createButton(visualPage, afterThemes + 64, "Auto-Enable: OFF", "Enable on load")
     
     visualPage.CanvasSize = UDim2.new(0, 0, 0, afterThemes + 100)
 
@@ -2086,14 +2246,16 @@ local function buildGui()
     keysLabel.Text = "⌨ Keybinds:"
     keysLabel.Parent = targetPage
 
-    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Press to lock onto the nearest target, press again to unlock. Click this button then press any key to rebind.")
-    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Cycles to the next closest valid target while locked on. Click to rebind.")
+    lockOnKeyButton = createButton(targetPage, 24, "Lock-on: X", "Toggle lock")
+    swapKeyButton = createButton(targetPage, 56, "Swap: C", "Next target")
 
-    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Locks onto the player closest to your mouse cursor instead of closest to your character. Better for picking specific targets in groups.")
+    mouseTargetButton = createButton(targetPage, 88, "Mouse target: OFF", "Cursor target")
+
+    teamsModeButton = createButton(targetPage, 120, "Teams Mode: OFF", "Auto friendly/unfriendly teammates")
 
     local friendsLabel = Instance.new("TextLabel")
     friendsLabel.Size = UDim2.new(1, -10, 0, 20)
-    friendsLabel.Position = UDim2.new(0, 0, 0, 124)
+    friendsLabel.Position = UDim2.new(0, 0, 0, 156)
     friendsLabel.BackgroundTransparency = 1
     friendsLabel.Font = Enum.Font.GothamBold
     friendsLabel.TextSize = 11
@@ -2104,14 +2266,14 @@ local function buildGui()
 
     friendsList = Instance.new("ScrollingFrame")
     friendsList.Size = UDim2.new(1, -10, 0, 130)
-    friendsList.Position = UDim2.new(0, 0, 0, 146)
+    friendsList.Position = UDim2.new(0, 0, 0, 178)
     friendsList.BackgroundColor3 = currentTheme.secondary
     friendsList.BorderSizePixel = 0
     friendsList.ScrollBarThickness = 4
     friendsList.Parent = targetPage
     Instance.new("UICorner", friendsList).CornerRadius = UDim.new(0, 6)
 
-    -- EXTRA SETTINGS
+    -- EXTRA SETTINGS (same size as main GUI, scrollable)
     extraSettingsFrame = Instance.new("Frame")
     extraSettingsFrame.Size = UDim2.new(0, 320, 0, 420)
     extraSettingsFrame.Position = UDim2.new(0, 340, 1, -440)
@@ -2148,39 +2310,39 @@ local function buildGui()
     extraSettingsCloseButton.Parent = extraSettingsFrame
     Instance.new("UICorner", extraSettingsCloseButton).CornerRadius = UDim.new(0, 6)
 
-    -- Scrollable content area
-    local extraScrollFrame = Instance.new("ScrollingFrame")
+    -- Scrollable content area for extra settings
+    extraScrollFrame = Instance.new("ScrollingFrame")
     extraScrollFrame.Size = UDim2.new(1, -10, 1, -45)
     extraScrollFrame.Position = UDim2.new(0, 5, 0, 40)
     extraScrollFrame.BackgroundTransparency = 1
     extraScrollFrame.ScrollBarThickness = 4
     extraScrollFrame.ScrollBarImageColor3 = currentTheme.primary1
     extraScrollFrame.BorderSizePixel = 0
-    extraScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 460)
+    extraScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 500)
     extraScrollFrame.Parent = extraSettingsFrame
 
-    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", "Flips the camera 180 degrees so you face AWAY from your target. Useful for retreating while keeping track of an enemy.")
+    reverseLockButton = createButton(extraScrollFrame, 0, "Reverse lock: OFF", "Face away")
     reverseLockButton.Position = UDim2.new(0, 5, 0, 0); reverseLockButton.Size = UDim2.new(1, -10, 0, 28)
 
-    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", "Hold this key to temporarily activate reverse lock. Releasing snaps back to normal. Click to rebind.")
+    reverseKeyButton = createButton(extraScrollFrame, 32, "Reverse: B", "Hold reverse")
     reverseKeyButton.Position = UDim2.new(0, 5, 0, 32); reverseKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
-    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", "Offsets your aim slightly to the side of the target for a more cinematic angle and better visibility in close-range.")
+    perfectOffsetButton = createButton(extraScrollFrame, 64, "Perfect offset: OFF", "Aim offset")
     perfectOffsetButton.Position = UDim2.new(0, 5, 0, 64); perfectOffsetButton.Size = UDim2.new(1, -10, 0, 28)
 
-    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", "Allows locking onto NPCs (non-player characters) in addition to players. Required for PvE games or boss fights.")
+    npcModeButton = createButton(extraScrollFrame, 96, "NPC Mode: OFF", "Target NPCs")
     npcModeButton.Position = UDim2.new(0, 5, 0, 96); npcModeButton.Size = UDim2.new(1, -10, 0, 28)
 
-    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", "Leads your aim slightly ahead of a moving target based on their velocity. Compensates for movement so camera points where they're going.")
+    predictionButton = createButton(extraScrollFrame, 128, "Prediction: OFF", "Aim ahead")
     predictionButton.Position = UDim2.new(0, 5, 0, 128); predictionButton.Size = UDim2.new(1, -10, 0, 28)
 
-    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", "Overrides the game's camera scripts entirely. Use in games with custom cameras that fight the lock-on. May cause jitter in some games.")
+    forceCameraButton = createButton(extraScrollFrame, 160, "Force Camera: OFF", "Override game camera")
     forceCameraButton.Position = UDim2.new(0, 5, 0, 160); forceCameraButton.Size = UDim2.new(1, -10, 0, 28)
 
     -- Mouse Resistance toggle and slider
-    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", "Controls how much the camera resists being pulled away from target. 100% = rigid lock, 0% = full mouse freedom, negative = pushes away.")
+    mouseResistanceButton = createButton(extraScrollFrame, 192, "Mouse Resist: OFF", "Allow pulling away")
     mouseResistanceButton.Position = UDim2.new(0, 5, 0, 192); mouseResistanceButton.Size = UDim2.new(1, -10, 0, 28)
-    
+
     mouseResistanceLabel = Instance.new("TextLabel")
     mouseResistanceLabel.Size = UDim2.new(1, -10, 0, 16)
     mouseResistanceLabel.Position = UDim2.new(0, 5, 0, 224)
@@ -2191,7 +2353,7 @@ local function buildGui()
     mouseResistanceLabel.TextXAlignment = Enum.TextXAlignment.Left
     mouseResistanceLabel.Text = string.format("Resistance: %.0f%%", mouseResistanceScale * 100)
     mouseResistanceLabel.Parent = extraScrollFrame
-    
+
     mouseResistanceSliderBar = Instance.new("Frame")
     mouseResistanceSliderBar.Size = UDim2.new(1, -10, 0, 8)
     mouseResistanceSliderBar.Position = UDim2.new(0, 5, 0, 242)
@@ -2199,7 +2361,7 @@ local function buildGui()
     mouseResistanceSliderBar.BorderSizePixel = 0
     mouseResistanceSliderBar.Parent = extraScrollFrame
     Instance.new("UICorner", mouseResistanceSliderBar).CornerRadius = UDim.new(0, 4)
-    
+
     mouseResistanceSliderKnob = Instance.new("Frame")
     mouseResistanceSliderKnob.Size = UDim2.new(0, 16, 0, 16)
     -- Convert -1 to 1 range to 0 to 1 for position
@@ -2209,33 +2371,33 @@ local function buildGui()
     mouseResistanceSliderKnob.BorderSizePixel = 0
     mouseResistanceSliderKnob.Parent = mouseResistanceSliderBar
     Instance.new("UICorner", mouseResistanceSliderKnob).CornerRadius = UDim.new(1, 0)
-    
+
     -- LockOn+ toggle and keybind
-    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", "Rotates your character's body to face the locked target while your camera stays free. Useful in fighting games where attacks need to face the opponent.")
+    lockOnPlusButton = createButton(extraScrollFrame, 260, "LockOn+: OFF", "Rotate body to target")
     lockOnPlusButton.Position = UDim2.new(0, 5, 0, 260); lockOnPlusButton.Size = UDim2.new(1, -10, 0, 28)
 
-    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", "Hold this key to activate body rotation toward target. Release to return to normal movement. Click to rebind.")
+    lockOnPlusKeyButton = createButton(extraScrollFrame, 292, "LockOn+ Key: Q", "Hold to activate")
     lockOnPlusKeyButton.Position = UDim2.new(0, 5, 0, 292); lockOnPlusKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
-    -- LockCamToggle
-    lockCamToggleBtn = createButton(extraScrollFrame, 324, "LockCamToggle: OFF", "Keeps your target selected but does NOT force your camera to follow them. Look around freely while still having a target locked.")
-    lockCamToggleBtn.Position = UDim2.new(0, 5, 0, 324); lockCamToggleBtn.Size = UDim2.new(1, -10, 0, 28)
-    lockCamToggleModeBtn = createButton(extraScrollFrame, 356, "Mode: Hold", "Hold: only active while key is held. Toggle: press once to activate, press again to deactivate.")
-    lockCamToggleModeBtn.Position = UDim2.new(0, 5, 0, 356); lockCamToggleModeBtn.Size = UDim2.new(1, -10, 0, 28)
-    lockCamToggleKeyBtn = createButton(extraScrollFrame, 388, "LockCam Key: F", "The key for LockCamToggle. Click to rebind. Default: F.")
-    lockCamToggleKeyBtn.Position = UDim2.new(0, 5, 0, 388); lockCamToggleKeyBtn.Size = UDim2.new(1, -10, 0, 28)
-    connect(lockCamToggleBtn.MouseButton1Click, function() playClickSound(); lockCamToggleEnabled = not lockCamToggleEnabled; if not lockCamToggleEnabled then lockCamToggleActive = false end; refreshAllUI() end)
-    connect(lockCamToggleModeBtn.MouseButton1Click, function() playClickSound(); lockCamToggleMode = lockCamToggleMode == "Hold" and "Toggle" or "Hold"; lockCamToggleActive = false; refreshAllUI() end)
-    connect(lockCamToggleKeyBtn.MouseButton1Click, function() playClickSound(); waitingForKeybind = "_LockCamToggle"; lockCamToggleKeyBtn.Text = "..." end)
+    weldPauseButton = createButton(extraScrollFrame, 324, "Weld Pause: OFF", "Pause lock when grabbed")
+    weldPauseButton.Position = UDim2.new(0, 5, 0, 324); weldPauseButton.Size = UDim2.new(1, -10, 0, 28)
+
+    -- LockCamToggle - lock on target but free camera
+    lockCamToggleButton = createButton(extraScrollFrame, 360, "LockCamToggle: OFF", "Lock target without forcing camera")
+    lockCamToggleButton.Position = UDim2.new(0, 5, 0, 360); lockCamToggleButton.Size = UDim2.new(1, -10, 0, 28)
+
+    lockCamToggleModeButton = createButton(extraScrollFrame, 392, "Mode: Hold", "Hold or Toggle")
+    lockCamToggleModeButton.Position = UDim2.new(0, 5, 0, 392); lockCamToggleModeButton.Size = UDim2.new(1, -10, 0, 28)
+
+    lockCamToggleKeyButton = createButton(extraScrollFrame, 424, "LockCam Key: F", "Set keybind")
+    lockCamToggleKeyButton.Position = UDim2.new(0, 5, 0, 424); lockCamToggleKeyButton.Size = UDim2.new(1, -10, 0, 28)
 
     -- GAME-SPECIFIC FUNCTIONS - Always show selector
     -- Game selector button
-    gameFunctionsButton = createButton(extraScrollFrame, 420, "🎮 Game Functions", "Opens game-specific functions panel. Some games have special features like auto-timing abilities. Select your game from the dropdown.")
-    gameFunctionsButton.Position = UDim2.new(0, 5, 0, 420); gameFunctionsButton.Size = UDim2.new(1, -10, 0, 28)
+    gameFunctionsButton = createButton(extraScrollFrame, 460, "🎮 Game Functions", "Select game for special features")
+    gameFunctionsButton.Position = UDim2.new(0, 5, 0, 460); gameFunctionsButton.Size = UDim2.new(1, -10, 0, 28)
     gameFunctionsButton.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
 
-    extraSettingsFrame.Size = UDim2.new(0, 320, 0, 420)
-    
     -- Game functions frame (game selector + functions)
     gameFunctionsFrame = Instance.new("Frame")
     gameFunctionsFrame.Size = UDim2.new(0, 220, 0, 200)
@@ -2557,6 +2719,7 @@ local function buildGui()
     end)
 
     connect(mouseTargetButton.MouseButton1Click, function() playClickSound(); mouseTargetMode = not mouseTargetMode; refreshAllUI() end)
+    connect(teamsModeButton.MouseButton1Click, function() playClickSound(); toggleTeamsMode(); rebuildFriendsList() end)
 
 
     connect(lockOnKeyButton.MouseButton1Click, function() playClickSound(); waitingForKeybind = "LockOn"; lockOnKeyButton.Text = "..." end)
@@ -2620,12 +2783,51 @@ local function buildGui()
         waitingForKeybind = "LockOnPlus"
         lockOnPlusKeyButton.Text = "..."
     end)
+    
+    -- Weld pause control
+    connect(weldPauseButton.MouseButton1Click, function()
+        playClickSound()
+        weldPauseEnabled = not weldPauseEnabled
+        -- Clear pause state when disabled
+        if not weldPauseEnabled then
+            isWeldPaused = false
+            weldPausedTarget = nil
+            weldPausedType = nil
+        end
+        refreshAllUI()
+    end)
+
+    -- LockCamToggle controls
+    connect(lockCamToggleButton.MouseButton1Click, function()
+        playClickSound()
+        lockCamToggleEnabled = not lockCamToggleEnabled
+        if not lockCamToggleEnabled then lockCamToggleActive = false end
+        refreshAllUI()
+    end)
+    connect(lockCamToggleModeButton.MouseButton1Click, function()
+        playClickSound()
+        if lockCamToggleMode == "Hold" then
+            lockCamToggleMode = "Toggle"
+        else
+            lockCamToggleMode = "Hold"
+        end
+        lockCamToggleActive = false
+        refreshAllUI()
+    end)
+    connect(lockCamToggleKeyButton.MouseButton1Click, function()
+        playClickSound()
+        waitingForKeybind = "LockCamToggle"
+        lockCamToggleKeyButton.Text = "..."
+    end)
 
     setTab("Main")
     refreshAllUI()
     applyThemeToUI()
     rebuildFriendsList()
     syncTargetingOptions()
+
+    -- Start teams mode if it was saved as enabled
+    if teamsModeEnabled then startTeamsMode() end
 
     local indicator = Instance.new("TextLabel")
     indicator.Size = UDim2.new(0, 160, 0, 28)
@@ -2733,12 +2935,6 @@ end
 
 connect(UserInputService.InputBegan, function(input, gpe)
     if waitingForKeybind and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode ~= Enum.KeyCode.Unknown then
-        if waitingForKeybind == "_LockCamToggle" then
-            lockCamToggleKeybind = input.KeyCode
-            waitingForKeybind = nil
-            refreshAllUI()
-            return
-        end
         keybinds[waitingForKeybind] = input.KeyCode
         waitingForKeybind = nil
         refreshAllUI()
@@ -2763,9 +2959,16 @@ connect(UserInputService.InputBegan, function(input, gpe)
     -- These only work when NOT typing
     if kc == keybinds.ReverseLock and reverseLockEnabled then reverseLockHeld = true end
     if kc == keybinds.LockOnPlus and lockOnPlusEnabled then lockOnPlusHeld = true end
-    if kc == lockCamToggleKeybind and lockCamToggleEnabled then
-        if lockCamToggleMode == "Hold" then lockCamToggleActive = true
-        else lockCamToggleActive = not lockCamToggleActive end
+
+    -- LockCamToggle input
+    if kc == keybinds.LockCamToggle and lockCamToggleEnabled then
+        if lockCamToggleMode == "Hold" then
+            lockCamToggleActive = true
+            lockCamToggleHeld = true
+        else
+            -- Toggle mode
+            lockCamToggleActive = not lockCamToggleActive
+        end
     end
     
     if kc == keybinds.LockOn then
@@ -2815,7 +3018,11 @@ end)
 connect(UserInputService.InputEnded, function(input)
     if input.UserInputType == Enum.UserInputType.Keyboard then
         if input.KeyCode == keybinds.ReverseLock then reverseLockHeld = false end
-        if input.KeyCode == lockCamToggleKeybind and lockCamToggleEnabled and lockCamToggleMode == "Hold" then lockCamToggleActive = false end
+        -- LockCamToggle hold release
+        if input.KeyCode == keybinds.LockCamToggle and lockCamToggleEnabled and lockCamToggleMode == "Hold" then
+            lockCamToggleActive = false
+            lockCamToggleHeld = false
+        end
         if input.KeyCode == keybinds.LockOnPlus then 
             lockOnPlusHeld = false
             -- Re-enable AutoRotate when released
