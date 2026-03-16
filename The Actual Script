@@ -1005,46 +1005,7 @@ function rebuildFriendsList()
         local uiList = Instance.new("UIListLayout", friendsList)
         uiList.SortOrder = Enum.SortOrder.LayoutOrder
         uiList.Padding = UDim.new(0, 3)
-
-        -- Check if all players are friendly
-        local allFriendly = true
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= localPlayer and not isFriendly(plr) then
-                allFriendly = false
-                break
-            end
-        end
-
-        -- "All" button at the top
-        local allBtn = Instance.new("TextButton")
-        allBtn.Size = UDim2.new(1, -6, 0, 24)
-        allBtn.BackgroundColor3 = allFriendly and currentTheme.primary1 or currentTheme.secondary
-        allBtn.TextColor3 = currentTheme.text
-        allBtn.Font = Enum.Font.GothamBold
-        allBtn.TextSize = 12
-        allBtn.Text = "All" .. (allFriendly and " ✓" or "")
-        allBtn.BorderSizePixel = 0
-        allBtn.LayoutOrder = 0
-        allBtn.Parent = friendsList
-        Instance.new("UICorner", allBtn).CornerRadius = UDim.new(0, 6)
-        allBtn.MouseButton1Click:Connect(function()
-            playClickSound()
-            if allFriendly then
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= localPlayer then friendlies[plr.UserId] = nil end
-                end
-            else
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= localPlayer then
-                        friendlies[plr.UserId] = true
-                        if currentTarget == plr then lockedOn, currentTarget = false, nil end
-                    end
-                end
-            end
-            rebuildFriendsList()
-        end)
-
-        local idx = 1
+        local idx = 0
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= localPlayer then
                 idx += 1
@@ -1056,7 +1017,6 @@ function rebuildFriendsList()
                 item.TextSize = 12
                 item.Text = plr.Name .. (isFriendly(plr) and " ✓" or "")
                 item.BorderSizePixel = 0
-                item.LayoutOrder = idx
                 item.Parent = friendsList
                 Instance.new("UICorner", item).CornerRadius = UDim.new(0, 6)
                 item.MouseButton1Click:Connect(function()
