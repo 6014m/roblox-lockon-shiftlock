@@ -1,5 +1,4 @@
 -- SixZeroHub Compatibility Module for Lock-On Camera
--- Registers with SixZeroHub for deactivation and moves GUI to avoid overlap
 
 local SCRIPT_KEY = "LOCKON_CAMERA_V3"
 local RunService = game:GetService("RunService")
@@ -13,38 +12,50 @@ end
 
 ---------- GUI OFFSET ----------
 
-local OFFSET_X = 70
-local originalPositions = {}
-local movedGuiRef = nil
+local OFFSET = 70
+local isOffset = false
 
-local function moveChildren(gui)
-    if not gui or not gui.Parent then return end
-    if movedGuiRef == gui then return end
+local function shiftLockOnGui(direction)
+    local data = getScriptData()
+    if not data or not data.Gui or not data.Gui.Parent then return end
 
-    for _, child in ipairs(gui:GetChildren()) do
+    local dx = direction * OFFSET
+    for _, child in ipairs(data.Gui:GetChildren()) do
         if child:IsA("GuiObject") then
-            originalPositions[child] = child.Position
-            child.Position = UDim2.new(
-                child.Position.X.Scale,
-                child.Position.X.Offset + OFFSET_X,
-                child.Position.Y.Scale,
-                child.Position.Y.Offset
-            )
+            pcall(function()
+                child.Position = UDim2.new(
+                    child.Position.X.Scale,
+                    child.Position.X.Offset + dx,
+                    child.Position.Y.Scale,
+                    child.Position.Y.Offset
+                )
+            end)
         end
     end
-    movedGuiRef = gui
 end
 
-local function restoreChildren()
-    for child, pos in pairs(originalPositions) do
-        pcall(function()
-            if child and child.Parent then
-                child.Position = pos
-            end
-        end)
+local function applyOffset()
+    if not isOffset then
+        shiftLockOnGui(1)
+        isOffset = true
     end
-    originalPositions = {}
-    movedGuiRef = nil
+end
+
+local function removeOffset()
+    if isOffset then
+        shiftLockOnGui(-1)
+        isOffset = false
+    end
+end
+
+---------- TOGGLE LISTENER ----------
+
+_G.SixZeroHubOnToggle = function(visible)
+    if visible then
+        applyOffset()
+    else
+        removeOffset()
+    end
 end
 
 ---------- DEACTIVATION ----------
@@ -52,7 +63,7 @@ end
 local function fullDeactivate()
     local data, genv = getScriptData()
 
-    restoreChildren()
+    removeOffset()
 
     if data and data.Cleanup then
         pcall(data.Cleanup)
@@ -100,20 +111,7 @@ local function fullDeactivate()
 
     pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end)
     genv[SCRIPT_KEY] = nil
-end
-
----------- TOGGLE LISTENER ----------
-
--- when SixZeroHub is hidden, restore lock-on GUI; when shown, offset it again
-_G.SixZeroHubOnToggle = function(visible)
-    local data = getScriptData()
-    if not data or not data.Gui or not data.Gui.Parent then return end
-
-    if visible then
-        moveChildren(data.Gui)
-    else
-        restoreChildren()
-    end
+    _G.SixZeroHubOnToggle = nil
 end
 
 ---------- REGISTRATION ----------
@@ -128,24 +126,13 @@ task.spawn(function()
         task.wait(1)
     end
 
-    -- wait for lock-on GUI to be fully built then move its children
+    -- wait for GUI to be built then apply initial offset
     for _ = 1, 30 do
         local data = getScriptData()
         if data and data.Gui and data.Gui.Parent and #data.Gui:GetChildren() > 0 then
-            moveChildren(data.Gui)
+            applyOffset()
             break
         end
         task.wait(1)
-    end
-
-    -- watch for GUI recreation (theme changes rebuild it)
-    while true do
-        task.wait(3)
-        local data = getScriptData()
-        if not data then break end
-        if data.Gui and data.Gui.Parent and data.Gui ~= movedGuiRef and #data.Gui:GetChildren() > 0 then
-            originalPositions = {}
-            moveChildren(data.Gui)
-        end
     end
 end)
