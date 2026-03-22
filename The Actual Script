@@ -155,19 +155,14 @@ task.wait()
 --==================================================
 -- GHOST MODE CHECK
 --==================================================
--- To enable ghost mode (no GUI, no highlights, no prints, stealth lock-on):
---   getgenv().ghostmode = true
--- Optional ghost settings (set before loading):
---   getgenv().ghost_lockonplus = true/false
---   getgenv().ghost_reverse = true/false
---   getgenv().ghost_prediction = true/false
---   getgenv().ghost_perfect_offset = true/false
---   getgenv().ghost_mouse_resistance = true/false
---   getgenv().ghost_force_camera = true/false
---   getgenv().ghost_autoswap = true/false
---   getgenv().ghost_shiftlock = true/false
---   getgenv().ghost_lockcam = true/false
---   (and more - see LockOnGhostModule.lua for full list)
+-- Ghost mode: stealth lock-on with no GUI, no highlights, no prints.
+-- Two ways to use:
+--   1) Via main script (uses HttpGet to load ghost module):
+--        getgenv().ghostmode = true
+--        loadstring(game:HttpGet(url, true))()
+--   2) Self-contained (NO HttpGet at all - paste ghost module directly):
+--        getgenv().ghost_inline = true
+--        then execute LockOnGhostModule.lua directly
 do
     local _genv = getgenv and getgenv() or _G
     if _genv.ghostmode then

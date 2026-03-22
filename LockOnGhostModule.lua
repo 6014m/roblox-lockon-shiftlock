@@ -1,27 +1,30 @@
 -- LockOnGhostModule.lua
--- Stealth lock-on: no GUI, no highlights, no prints
--- Enable: getgenv().ghostmode = true before loading the main script
+-- Stealth lock-on: no GUI, no highlights, no prints, no HttpGet
+-- Two modes:
+--   1) External load: getgenv().ghostmode = true then load main script
+--   2) Self-contained: getgenv().ghost_inline = true then load this file directly
+--      (no HttpGet calls at all - targeting logic is baked in)
 --
--- Optional settings (set via getgenv() BEFORE loading):
---   ghost_lockonplus    = false     -- LockOn+ character rotation
---   ghost_reverse       = false     -- Reverse lock (hold key)
---   ghost_prediction    = false     -- Predict moving targets
+-- Settings (set via getgenv() BEFORE loading):
+--   ghost_lockonplus    = false
+--   ghost_reverse       = false
+--   ghost_prediction    = false
 --   ghost_prediction_strength = 0.15
---   ghost_perfect_offset = false    -- Side-angle offset
---   ghost_mouse_resistance = false  -- Mouse resistance blend
---   ghost_mouse_resistance_scale = 0.5  -- -1 to 1
---   ghost_force_camera  = false     -- Override game camera scripts
---   ghost_autoswap      = true      -- Auto-swap on invalid target
---   ghost_closeswap     = false     -- Always pick closest
---   ghost_visibility    = false     -- Visibility raycast check
---   ghost_check_health  = true      -- Check health/forcefield
---   ghost_auto_relock   = false     -- Auto relock after losing target
---   ghost_realistic     = false     -- Front-only targeting
---   ghost_height        = 0         -- Height offset (-5 to 5)
---   ghost_range         = 0         -- Range limit (0 = infinite)
---   ghost_shiftlock     = false     -- Custom shiftlock (no icon)
---   ghost_lockcam       = false     -- LockCamToggle (free cam while locked)
---   ghost_lockcam_mode  = "Hold"    -- "Hold" or "Toggle"
+--   ghost_perfect_offset = false
+--   ghost_mouse_resistance = false
+--   ghost_mouse_resistance_scale = 0.5
+--   ghost_force_camera  = false
+--   ghost_autoswap      = true
+--   ghost_closeswap     = false
+--   ghost_visibility    = false
+--   ghost_check_health  = true
+--   ghost_auto_relock   = false
+--   ghost_realistic     = false
+--   ghost_height        = 0
+--   ghost_range         = 0
+--   ghost_shiftlock     = false
+--   ghost_lockcam       = false
+--   ghost_lockcam_mode  = "Hold"
 --   ghost_key_lockon    = "X"
 --   ghost_key_swap      = "C"
 --   ghost_key_reverse   = "B"
@@ -32,9 +35,6 @@
 local GhostModule = {}
 
 function GhostModule.run()
-    --==================================================
-    -- READ SETTINGS FROM GETGENV
-    --==================================================
     local genv = getgenv and getgenv() or _G
 
     local function gs(key, default)
@@ -80,33 +80,61 @@ function GhostModule.run()
     }
 
     --==================================================
+    -- RANDOM NAMES (avoid identifiable strings)
+    --==================================================
+    local function rstr(len)
+        local t = {}
+        for i = 1, (len or math.random(10, 16)) do t[i] = string.char(math.random(97, 122)) end
+        return table.concat(t)
+    end
+
+    --==================================================
     -- CLEANUP OLD INSTANCE
     --==================================================
-    local SCRIPT_KEY = "LOCKON_GHOST_V1"
+    local SCRIPT_KEY = rstr(20)
     local allConnections = {}
 
-    local function cleanupOld()
-        if genv[SCRIPT_KEY] then
-            local old = genv[SCRIPT_KEY]
+    -- Clean any previous ghost instances
+    for _, key in ipairs({"LOCKON_GHOST_V1", "LOCKON_CAMERA_V3"}) do
+        if genv[key] then
+            local old = genv[key]
             if old.Connections then
                 for _, c in ipairs(old.Connections) do pcall(function() c:Disconnect() end) end
             end
             if old.Cleanup then pcall(old.Cleanup) end
-            if old.BindName then pcall(function() game:GetService("RunService"):UnbindFromRenderStep(old.BindName) end) end
-            genv[SCRIPT_KEY] = nil
-        end
-        -- Also clean old normal instance
-        if genv["LOCKON_CAMERA_V3"] then
-            local old = genv["LOCKON_CAMERA_V3"]
-            if old.Connections then for _, c in ipairs(old.Connections) do pcall(function() c:Disconnect() end) end end
-            if old.Cleanup then pcall(old.Cleanup) end
             if old.Gui then pcall(function() old.Gui:Destroy() end) end
             if old.BindName then pcall(function() game:GetService("RunService"):UnbindFromRenderStep(old.BindName) end) end
-            genv["LOCKON_CAMERA_V3"] = nil
+            if old.BindNames then
+                for _, bn in ipairs(old.BindNames) do
+                    pcall(function() game:GetService("RunService"):UnbindFromRenderStep(bn) end)
+                end
+            end
+            genv[key] = nil
         end
     end
 
-    cleanupOld()
+    -- Also clean lingering GUIs from normal mode
+    pcall(function()
+        for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then gui:Destroy() end
+        end
+    end)
+    pcall(function()
+        local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
+        if pg then
+            for _, gui in ipairs(pg:GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then gui:Destroy() end
+            end
+        end
+    end)
+    pcall(function()
+        if gethui then
+            for _, gui in ipairs(gethui():GetChildren()) do
+                if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then gui:Destroy() end
+            end
+        end
+    end)
+
     task.wait()
 
     --==================================================
@@ -116,13 +144,23 @@ function GhostModule.run()
     local Players = cloneref(game:GetService("Players"))
     local UserInputService = cloneref(game:GetService("UserInputService"))
     local RunService = cloneref(game:GetService("RunService"))
+    local Workspace = cloneref(game:GetService("Workspace"))
 
     local localPlayer = Players.LocalPlayer
     local camera = workspace.CurrentCamera
 
-    local BIND_NAME = "GhostLockOn_" .. localPlayer.UserId .. "_" .. tostring(tick()):gsub("%.", "")
+    -- All bind names are random
+    local BIND_NAME = rstr()
+    local FORCE_BIND = rstr()
+    local LP_BIND1 = rstr()
+    local LP_BIND2 = rstr()
+    local LP_BIND3 = rstr()
 
-    local ScriptData = { Connections = allConnections, BindName = BIND_NAME }
+    local ScriptData = {
+        Connections = allConnections,
+        BindName = BIND_NAME,
+        BindNames = {FORCE_BIND, LP_BIND1, LP_BIND2, LP_BIND3},
+    }
     genv[SCRIPT_KEY] = ScriptData
 
     if not game:IsLoaded() then game.Loaded:Wait() end
@@ -138,18 +176,100 @@ function GhostModule.run()
     end)
 
     --==================================================
-    -- LOAD TARGETING MODULE ONLY
+    -- INLINE TARGETING (no HttpGet)
     --==================================================
-    local function loadModule(url)
-        local s, r = pcall(function() return loadstring(game:HttpGet(url, true))() end)
-        return s and r or nil
+    local friendlies = {}
+
+    local function getRootPart(char)
+        return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
+    end
+    local function getHumanoid(char) return char and char:FindFirstChildOfClass("Humanoid") end
+    local function isFriendly(plr) return friendlies[plr.UserId] == true end
+
+    local function isInFront(root)
+        if not realisticEnabled then return true end
+        local cam = camera or workspace.CurrentCamera
+        if not cam then return true end
+        local toTarget = root.Position - cam.CFrame.Position
+        local mag = toTarget.Magnitude
+        if mag <= 0.01 then return false end
+        local dot = (toTarget / mag):Dot(cam.CFrame.LookVector)
+        return dot >= math.cos(math.rad(60))
     end
 
-    local TargetingModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTargetingModule.lua")
+    local function isAliveAndUnshielded(char)
+        if not char then return false end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum then return false end
+        if checkHealthEnabled then
+            if hum.Health <= 0 then return false end
+            if char:FindFirstChildOfClass("ForceField") then return false end
+        end
+        return true
+    end
 
-    local friendlies = {}
-    local targeting = TargetingModule and TargetingModule.new(localPlayer, camera)
-    if targeting then targeting:SetFriendliesTable(friendlies) end
+    local function isPlayerVisible(plr)
+        if not plr then return false end
+        local char = plr.Character
+        local root = getRootPart(char)
+        if not root then return false end
+        local cam = camera or workspace.CurrentCamera
+        if not cam then return true end
+        local origin = cam.CFrame.Position
+        local direction = root.Position - origin
+        if direction.Magnitude <= 0.01 then return true end
+        local ignoreList = {localPlayer.Character}
+        local params = RaycastParams.new()
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        params.FilterDescendantsInstances = ignoreList
+        while true do
+            local result = Workspace:Raycast(origin, direction, params)
+            if not result then return true end
+            local hit = result.Instance
+            if hit:IsDescendantOf(char) then return true end
+            if hit:IsA("BasePart") then
+                local transparency = hit.Transparency or 0
+                local canCollide = hit.CanCollide
+                if transparency > 0.4 and not canCollide then
+                    table.insert(ignoreList, hit)
+                    params.FilterDescendantsInstances = ignoreList
+                    local dirUnit = direction.Unit
+                    origin = result.Position + dirUnit * 0.05
+                    direction = root.Position - origin
+                    if direction.Magnitude <= 0.01 then return true end
+                else
+                    return false
+                end
+            else
+                return false
+            end
+        end
+    end
+
+    local function getBestTarget(excludePlayer)
+        local myChar = localPlayer.Character
+        local myRoot = getRootPart(myChar)
+        if not myRoot then return nil end
+        local closestPlr, closestDist = nil, math.huge
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= localPlayer and plr ~= excludePlayer and not isFriendly(plr) then
+                local char = plr.Character
+                local root = getRootPart(char)
+                if root and isInFront(root) and isAliveAndUnshielded(char) then
+                    local passVis = true
+                    if visibilityCheckEnabled then passVis = isPlayerVisible(plr) end
+                    if passVis then
+                        local dist = (root.Position - myRoot.Position).Magnitude
+                        if (rangeLimit <= 0 or dist <= rangeLimit) and dist < closestDist then
+                            closestDist = dist
+                            closestPlr = plr
+                        end
+                    end
+                end
+            end
+        end
+        return closestPlr
+    end
 
     --==================================================
     -- STATE
@@ -163,33 +283,7 @@ function GhostModule.run()
     local reverseLockHeld = false
     local lockOnPlusHeld = false
     local lockCamToggleActive = false
-
-    -- Ghost shiftlock state (no GUI, no V icon)
     local shiftLocked = false
-    local shiftLoopConn = nil
-
-    --==================================================
-    -- UTILITY
-    --==================================================
-    local function getRootPart(char)
-        return char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso"))
-    end
-    local function getHumanoid(char) return char and char:FindFirstChildOfClass("Humanoid") end
-    local function isFriendly(plr) return friendlies[plr.UserId] == true end
-
-    local function syncTargetingOptions()
-        if targeting then
-            pcall(function()
-                targeting:SetOptions({
-                    realisticEnabled = realisticEnabled,
-                    checkHealthEnabled = checkHealthEnabled,
-                    visibilityCheckEnabled = visibilityCheckEnabled,
-                    rangeLimit = rangeLimit,
-                })
-            end)
-        end
-    end
-    syncTargetingOptions()
 
     local function isValidTarget(char)
         if not char or not char.Parent then return false end
@@ -206,8 +300,31 @@ function GhostModule.run()
         return true
     end
 
+    local function findBestTargetCombined(exclude)
+        local myRoot = getRootPart(localPlayer.Character)
+        if not myRoot then return nil, nil end
+        local best, bestType, bestDist = nil, nil, math.huge
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= localPlayer and plr ~= exclude and not isFriendly(plr) then
+                local char, root = plr.Character, getRootPart(plr.Character)
+                if root and isValidTarget(char) then
+                    local dist = (root.Position - myRoot.Position).Magnitude
+                    if (rangeLimit == 0 or dist <= rangeLimit) and dist < bestDist then
+                        local valid = true
+                        if realisticEnabled then
+                            local dot = (root.Position - myRoot.Position).Unit:Dot(myRoot.CFrame.LookVector)
+                            if dot < 0 then valid = false end
+                        end
+                        if valid then bestDist, best, bestType = dist, plr, "player" end
+                    end
+                end
+            end
+        end
+        return best, bestType
+    end
+
     --==================================================
-    -- GHOST SHIFTLOCK (no GUI)
+    -- GHOST SHIFTLOCK (no GUI, no icon)
     --==================================================
     local function disableGameShiftLock()
         pcall(function() localPlayer.DevEnableMouseLock = false end)
@@ -256,27 +373,23 @@ function GhostModule.run()
         if shiftLocked then releaseShiftLock() else applyShiftLock() end
     end
 
-    -- Shiftlock render loop (character faces camera direction)
     if ghostShiftlock then
-        shiftLoopConn = connect(RunService.RenderStepped, function()
+        connect(RunService.RenderStepped, function()
             if not shiftLocked then return end
             local char = localPlayer.Character
             if not char then return end
             local hum = char:FindFirstChildOfClass("Humanoid")
             local root = getRootPart(char)
             if not hum or not root then return end
-
             if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
                 UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
             end
-
             if hum.PlatformStand or hum.Health <= 0 then return end
             local state = hum:GetState()
             if state == Enum.HumanoidStateType.Ragdoll or state == Enum.HumanoidStateType.FallingDown
                 or state == Enum.HumanoidStateType.Physics or state == Enum.HumanoidStateType.Dead then
                 return
             end
-
             local cam = workspace.CurrentCamera
             if not cam then return end
             local look = cam.CFrame.LookVector
@@ -316,42 +429,14 @@ function GhostModule.run()
         end
     end
 
-    local function getBestTarget(exclude) return targeting and targeting:GetBestTarget(exclude) end
-
-    local function findBestTargetCombined(exclude)
-        local myRoot = getRootPart(localPlayer.Character)
-        if not myRoot then return nil, nil end
-        local best, bestType, bestDist = nil, nil, math.huge
-
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= localPlayer and plr ~= exclude and not isFriendly(plr) then
-                local char, root = plr.Character, getRootPart(plr.Character)
-                if root and isValidTarget(char) then
-                    local dist = (root.Position - myRoot.Position).Magnitude
-                    if (rangeLimit == 0 or dist <= rangeLimit) and dist < bestDist then
-                        local valid = true
-                        if realisticEnabled then
-                            local dot = (root.Position - myRoot.Position).Unit:Dot(myRoot.CFrame.LookVector)
-                            if dot < 0 then valid = false end
-                        end
-                        if valid then bestDist, best, bestType = dist, plr, "player" end
-                    end
-                end
-            end
-        end
-
-        return best, bestType
-    end
-
     --==================================================
-    -- FORCE CAMERA (high priority override)
+    -- FORCE CAMERA
     --==================================================
     local forceUpdateConnection = nil
 
     local function forceCameraUpdate()
         if not forceCameraMode or not lockedOn or not currentTarget then return end
         if lockCamToggleEnabled and lockCamToggleActive then return end
-
         local cam = workspace.CurrentCamera
         if not cam then return end
         local myChar = localPlayer.Character
@@ -360,19 +445,14 @@ function GhostModule.run()
         local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
         local targetRoot = getRootPart(targetChar)
         if not myRoot or not targetRoot then return end
-
         local camPos = cam.CFrame.Position
         local lookPos = targetRoot.Position + Vector3.new(0, lockHeightOffset, 0)
-
         if predictionEnabled and lastTargetPos then
-            local vel = (targetRoot.Position - lastTargetPos)
-            lookPos = lookPos + vel * predictionStrength
+            lookPos = lookPos + (targetRoot.Position - lastTargetPos) * predictionStrength
         end
-
         local desiredDir = lookPos - camPos
         local dir = desiredDir.Magnitude > 0.5 and desiredDir.Unit or lastLookDir
         lastLookDir = dir
-
         if reverseLockEnabled and reverseLockHeld then
             local baseDir = (lookPos - myRoot.Position)
             if baseDir.Magnitude > 0.001 then
@@ -380,7 +460,6 @@ function GhostModule.run()
                 if horiz.Magnitude > 0.001 then dir = (horiz.Unit + Vector3.new(0, baseDir.Unit.Y, 0)).Unit end
             end
         end
-
         if perfectOffsetEnabled then
             local horiz = Vector3.new(dir.X, 0, dir.Z)
             if horiz.Magnitude > 0.001 then
@@ -389,14 +468,12 @@ function GhostModule.run()
                 if off.Magnitude > 0.5 then dir = off.Unit end
             end
         end
-
         if mouseResistanceEnabled then
             local currentLook = cam.CFrame.LookVector
             local alpha = (mouseResistanceScale + 1) / 2
             local blendedDir = currentLook:Lerp(dir, alpha)
             if blendedDir.Magnitude > 0.001 then dir = blendedDir.Unit end
         end
-
         cam.CFrame = CFrame.new(camPos, camPos + dir)
     end
 
@@ -406,14 +483,14 @@ function GhostModule.run()
             forceUpdateConnection = nil
         end
         if forceCameraMode then
-            pcall(function() RunService:UnbindFromRenderStep("GhostForceCamera") end)
-            RunService:BindToRenderStep("GhostForceCamera", Enum.RenderPriority.Camera.Value + 100, forceCameraUpdate)
+            pcall(function() RunService:UnbindFromRenderStep(FORCE_BIND) end)
+            RunService:BindToRenderStep(FORCE_BIND, Enum.RenderPriority.Camera.Value + 100, forceCameraUpdate)
             forceUpdateConnection = RunService.RenderStepped:Connect(function()
                 if forceCameraMode and lockedOn then task.defer(forceCameraUpdate) end
             end)
             table.insert(allConnections, forceUpdateConnection)
         else
-            pcall(function() RunService:UnbindFromRenderStep("GhostForceCamera") end)
+            pcall(function() RunService:UnbindFromRenderStep(FORCE_BIND) end)
         end
     end
 
@@ -424,12 +501,10 @@ function GhostModule.run()
     --==================================================
     local function updateCamera(dt)
         local cam = workspace.CurrentCamera
-
         if forceCameraMode then
             if not cam or not cam.Parent then cam = workspace.CurrentCamera; camera = cam end
             if cam then camera = cam end
         end
-
         if not cam then cam = workspace.CurrentCamera; camera = cam; return end
 
         if not lockedOn or not currentTarget then
@@ -464,8 +539,8 @@ function GhostModule.run()
             unlockCamera(false); return
         end
 
-        if visibilityCheckEnabled and currentTargetType == "player" and targeting then
-            local visible = pcall(function() return targeting:IsPlayerVisible(currentTarget) end)
+        if visibilityCheckEnabled and currentTargetType == "player" then
+            local visible = isPlayerVisible(currentTarget)
             if visible then invisibleTime = 0 else
                 invisibleTime = invisibleTime + dt
                 if invisibleTime >= 2.5 then
@@ -483,13 +558,11 @@ function GhostModule.run()
             if b and b ~= currentTarget then setNewTarget(b, ty) end
         end
 
-        -- Force camera mode delegates to the high-priority hook
         if forceCameraMode then
             lastTargetPos = targetRoot.Position
             return
         end
 
-        -- LockCamToggle: keep target but free camera
         if lockCamToggleEnabled and lockCamToggleActive then
             lastTargetPos = targetRoot.Position
             pcall(function()
@@ -551,6 +624,8 @@ function GhostModule.run()
     --==================================================
     if lockOnPlusEnabled then
         local lockOnPlusAlign, lockOnPlusAttachment = nil, nil
+        local attachName = rstr(12)
+        local alignName = rstr(12)
 
         local function setupConstraint()
             local myChar = localPlayer.Character
@@ -559,12 +634,12 @@ function GhostModule.run()
             if not myRoot then return end
             if not lockOnPlusAttachment or not lockOnPlusAttachment.Parent then
                 lockOnPlusAttachment = Instance.new("Attachment")
-                lockOnPlusAttachment.Name = "GhostLockOnPlusAttach"
+                lockOnPlusAttachment.Name = attachName
                 lockOnPlusAttachment.Parent = myRoot
             end
             if not lockOnPlusAlign or not lockOnPlusAlign.Parent then
                 lockOnPlusAlign = Instance.new("AlignOrientation")
-                lockOnPlusAlign.Name = "GhostLockOnPlusAlign"
+                lockOnPlusAlign.Name = alignName
                 lockOnPlusAlign.Mode = Enum.OrientationAlignmentMode.OneAttachment
                 lockOnPlusAlign.Attachment0 = lockOnPlusAttachment
                 lockOnPlusAlign.RigidityEnabled = true
@@ -587,28 +662,18 @@ function GhostModule.run()
             local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
             local targetRoot = getRootPart(targetChar)
             if not targetRoot then return end
-
             local dir = (targetRoot.Position - myRoot.Position)
             local flat = Vector3.new(dir.X, 0, dir.Z)
             if flat.Magnitude < 0.1 then return end
-
             myHum.AutoRotate = false
-
-            -- Direct CFrame rotation
             local _, yAngle, _ = CFrame.lookAt(Vector3.zero, flat):ToEulerAnglesYXZ()
             myRoot.CFrame = CFrame.new(myRoot.Position) * CFrame.Angles(0, yAngle, 0)
-
-            -- Physics constraint
             setupConstraint()
             if lockOnPlusAlign then
                 lockOnPlusAlign.Enabled = true
                 lockOnPlusAlign.CFrame = CFrame.lookAt(Vector3.zero, flat)
             end
         end
-
-        local LP_BIND1 = "GhostLockOnPlus1"
-        local LP_BIND2 = "GhostLockOnPlus2"
-        local LP_BIND3 = "GhostLockOnPlus3"
 
         RunService:BindToRenderStep(LP_BIND1, Enum.RenderPriority.Camera.Value - 1, updateRotation)
         RunService:BindToRenderStep(LP_BIND2, Enum.RenderPriority.Camera.Value + 200, updateRotation)
@@ -638,9 +703,6 @@ function GhostModule.run()
                 end
             end
         end)
-
-        -- Cleanup binds on destroy
-        ScriptData._lpBinds = {LP_BIND1, LP_BIND2, LP_BIND3}
     end
 
     --==================================================
@@ -650,23 +712,20 @@ function GhostModule.run()
         forceCameraMode = false
         for _, conn in ipairs(allConnections) do pcall(function() conn:Disconnect() end) end
         allConnections = {}
-        pcall(function() RunService:UnbindFromRenderStep("GhostForceCamera") end)
-        if forceUpdateConnection then pcall(function() forceUpdateConnection:Disconnect() end); forceUpdateConnection = nil end
+        pcall(function() RunService:UnbindFromRenderStep(FORCE_BIND) end)
+        pcall(function() RunService:UnbindFromRenderStep(BIND_NAME) end)
+        pcall(function() RunService:UnbindFromRenderStep(LP_BIND1) end)
+        pcall(function() RunService:UnbindFromRenderStep(LP_BIND2) end)
+        pcall(function() RunService:UnbindFromRenderStep(LP_BIND3) end)
+        if forceUpdateConnection then pcall(function() forceUpdateConnection:Disconnect() end) end
         lockedOn, currentTarget = false, nil
         pcall(function() if camera then camera.CameraType = prevCameraType end end)
-        pcall(function() RunService:UnbindFromRenderStep(BIND_NAME) end)
         if shiftLocked then releaseShiftLock() end
-        if ScriptData._lpBinds then
-            for _, bn in ipairs(ScriptData._lpBinds) do
-                pcall(function() RunService:UnbindFromRenderStep(bn) end)
-            end
-        end
         for id in pairs(friendlies) do friendlies[id] = nil end
     end
 
     ScriptData.Cleanup = fullCleanup
 
-    -- /e stop to unload (silent)
     connect(localPlayer.Chatted, function(msg)
         if msg:lower() == "/e stop" then
             genv[SCRIPT_KEY] = nil
@@ -682,7 +741,6 @@ function GhostModule.run()
         local isTyping = UserInputService:GetFocusedTextBox() ~= nil
         local kc = input.KeyCode
 
-        -- Shiftlock toggle (works even during gpe, like Roblox built-in)
         if ghostShiftlock and kc == keybinds.ShiftLock and not gpe and not isTyping then
             toggleShiftLock()
         end
@@ -739,7 +797,6 @@ function GhostModule.run()
         end)
         if lockedOn then lockedOn, currentTarget, currentTargetType = false, nil, "player" end
         camera = workspace.CurrentCamera
-
         task.delay(0.5, function()
             if shiftLocked then
                 shiftLocked = false
@@ -750,49 +807,11 @@ function GhostModule.run()
 
     if localPlayer.Character then task.spawn(function() onCharacterAdded(localPlayer.Character) end) end
     connect(localPlayer.CharacterAdded, onCharacterAdded)
+end
 
-    --==================================================
-    -- TELEPORT PERSISTENCE (silent)
-    --==================================================
-    local SCRIPT_URL = "https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/The%20Actual%20Script"
-
-    local queueteleport = queue_on_teleport
-        or (syn and syn.queue_on_teleport)
-        or (fluxus and fluxus.queue_on_teleport)
-        or (krnl and krnl.queue_on_teleport)
-        or (genv.queue_on_teleport)
-        or (Krnl and Krnl.queue_on_teleport)
-        or (Synapse and Synapse.queue_on_teleport)
-        or (Fluxus and Fluxus.queue_on_teleport)
-        or (is_sirhurt_closure and queue_on_teleport)
-        or (pebc_execute and queue_on_teleport)
-
-    if queueteleport and SCRIPT_URL and not genv.GHOST_STARTUP_QUEUED then
-        genv.GHOST_STARTUP_QUEUED = true
-        pcall(function()
-            queueteleport([[
-                repeat task.wait() until game:IsLoaded()
-                task.wait(2)
-                pcall(function()
-                    loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
-                end)
-            ]])
-        end)
-    end
-
-    connect(localPlayer.OnTeleport, function(state)
-        if state == Enum.TeleportState.Started and queueteleport and SCRIPT_URL then
-            pcall(function()
-                queueteleport([[
-                    repeat task.wait() until game:IsLoaded()
-                    task.wait(2)
-                    pcall(function()
-                        loadstring(game:HttpGet("]] .. SCRIPT_URL .. [[", true))()
-                    end)
-                ]])
-            end)
-        end
-    end)
+-- Self-contained mode: if this file is executed directly
+if getgenv and getgenv().ghost_inline then
+    GhostModule.run()
 end
 
 return GhostModule
