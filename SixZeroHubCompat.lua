@@ -16,22 +16,24 @@ local OFFSET = 70
 local isOffset = false
 
 local function shiftLockOnGui(direction)
-    local data = getScriptData()
-    if not data or not data.Gui or not data.Gui.Parent then return end
+    pcall(function()
+        local data = getScriptData()
+        if not data or not data.Gui or not data.Gui.Parent then return end
 
-    local dx = direction * OFFSET
-    for _, child in ipairs(data.Gui:GetChildren()) do
-        if child:IsA("GuiObject") then
+        local dx = direction * OFFSET
+        for _, child in ipairs(data.Gui:GetChildren()) do
             pcall(function()
-                child.Position = UDim2.new(
-                    child.Position.X.Scale,
-                    child.Position.X.Offset + dx,
-                    child.Position.Y.Scale,
-                    child.Position.Y.Offset
-                )
+                if child:IsA("GuiObject") then
+                    child.Position = UDim2.new(
+                        child.Position.X.Scale,
+                        child.Position.X.Offset + dx,
+                        child.Position.Y.Scale,
+                        child.Position.Y.Offset
+                    )
+                end
             end)
         end
-    end
+    end)
 end
 
 local function applyOffset()
@@ -48,19 +50,12 @@ local function removeOffset()
     end
 end
 
----------- TOGGLE LISTENER ----------
-
-_G.SixZeroHubOnToggle = function(visible)
-    if visible then
-        applyOffset()
-    else
-        removeOffset()
-    end
-end
-
 ---------- DEACTIVATION ----------
 
+local alive = true
+
 local function fullDeactivate()
+    alive = false
     local data, genv = getScriptData()
 
     removeOffset()
@@ -111,12 +106,12 @@ local function fullDeactivate()
 
     pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end)
     genv[SCRIPT_KEY] = nil
-    _G.SixZeroHubOnToggle = nil
 end
 
----------- REGISTRATION ----------
+---------- REGISTRATION + POLLING ----------
 
 task.spawn(function()
+    -- wait for both systems
     for _ = 1, 30 do
         local data = getScriptData()
         if _G.SixZeroHubRegister and data then
@@ -126,13 +121,30 @@ task.spawn(function()
         task.wait(1)
     end
 
-    -- wait for GUI to be built then apply initial offset
+    -- wait for GUI to exist
     for _ = 1, 30 do
         local data = getScriptData()
         if data and data.Gui and data.Gui.Parent and #data.Gui:GetChildren() > 0 then
-            applyOffset()
+            if _G.SixZeroHubVisible then
+                applyOffset()
+            end
             break
         end
         task.wait(1)
+    end
+
+    -- poll _G.SixZeroHubVisible every 0.2s to react to toggle
+    local lastState = _G.SixZeroHubVisible
+    while alive do
+        task.wait(0.2)
+        local currentState = _G.SixZeroHubVisible
+        if currentState ~= lastState then
+            if currentState then
+                applyOffset()
+            else
+                removeOffset()
+            end
+            lastState = currentState
+        end
     end
 end)
