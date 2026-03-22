@@ -1586,10 +1586,8 @@ end
 
 -- Single render step for LockOn+ at high priority (after camera + force camera)
 RunService:BindToRenderStep(LOCKON_PLUS_BIND, Enum.RenderPriority.Camera.Value + 150, function()
-    if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
-        updateLockOnPlusRotation()
-        updateLockOnPlusAlignOrientation()
-    end
+    updateLockOnPlusRotation()
+    updateLockOnPlusAlignOrientation()
 end)
 
 --==================================================
