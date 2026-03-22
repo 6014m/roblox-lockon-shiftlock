@@ -152,6 +152,36 @@ cleanupOldInstance()
 -- Wait a frame to ensure cleanup completed
 task.wait()
 
+--==================================================
+-- GHOST MODE CHECK
+--==================================================
+-- To enable ghost mode (no GUI, no highlights, no prints, stealth lock-on):
+--   getgenv().ghostmode = true
+-- Optional ghost settings (set before loading):
+--   getgenv().ghost_lockonplus = true/false
+--   getgenv().ghost_reverse = true/false
+--   getgenv().ghost_prediction = true/false
+--   getgenv().ghost_perfect_offset = true/false
+--   getgenv().ghost_mouse_resistance = true/false
+--   getgenv().ghost_force_camera = true/false
+--   getgenv().ghost_autoswap = true/false
+--   getgenv().ghost_shiftlock = true/false
+--   getgenv().ghost_lockcam = true/false
+--   (and more - see LockOnGhostModule.lua for full list)
+do
+    local _genv = getgenv and getgenv() or _G
+    if _genv.ghostmode then
+        local ghostOk, GhostModule = pcall(function()
+            return loadstring(game:HttpGet("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnGhostModule.lua", true))()
+        end)
+        if ghostOk and GhostModule and GhostModule.run then
+            GhostModule.run()
+        end
+        return
+    end
+end
+
+
 local genv = getgenv and getgenv() or _G
 local ScriptData = {
     Connections = allConnections
