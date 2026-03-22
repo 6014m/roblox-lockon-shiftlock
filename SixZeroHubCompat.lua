@@ -1,70 +1,99 @@
 -- SixZeroHub Compatibility Module for Lock-On Camera
 -- Registers the lock-on script with SixZeroHub's active scripts system
--- so it can be deactivated from the hub
 
 local SCRIPT_KEY = "LOCKON_CAMERA_V3"
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local fileKey = "https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/The%20Actual%20Script"
 
-local function register()
-    if not _G.SixZeroHubRegister then return end
-
+local function getScriptData()
     local genv = getgenv and getgenv() or _G
-    local data = genv[SCRIPT_KEY]
+    return genv[SCRIPT_KEY], genv
+end
 
-    if not data then
-        -- script might still be loading, retry
-        task.delay(2, register)
-        return
+local function fullDeactivate()
+    local data, genv = getScriptData()
+
+    -- call the script's own cleanup first (disconnects, unbinds, destroys)
+    if data and data.Cleanup then
+        pcall(data.Cleanup)
     end
 
-    local fileKey = "https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/The%20Actual%20Script"
-
-    _G.SixZeroHubRegister("Lock-On Shiftlock", fileKey, function()
-        -- call the script's own cleanup
-        if data.Cleanup then
-            pcall(data.Cleanup)
+    -- disconnect all tracked connections
+    if data and data.Connections then
+        for _, conn in ipairs(data.Connections) do
+            pcall(function() conn:Disconnect() end)
         end
+    end
 
-        -- disconnect all tracked connections
-        if data.Connections then
-            for _, conn in ipairs(data.Connections) do
-                pcall(function() conn:Disconnect() end)
-            end
-        end
+    -- unbind all possible render step names
+    if data and data.BindName then
+        pcall(function() RunService:UnbindFromRenderStep(data.BindName) end)
+    end
+    pcall(function() RunService:UnbindFromRenderStep("LockOnForceCamera") end)
 
-        -- unbind render step
-        if data.BindName then
-            pcall(function()
-                game:GetService("RunService"):UnbindFromRenderStep(data.BindName)
-            end)
-        end
+    -- destroy the GUI stored in script data
+    if data and data.Gui then
+        pcall(function() data.Gui:Destroy() end)
+    end
 
-        -- destroy any lingering GUIs
-        if data.Gui then
-            pcall(function() data.Gui:Destroy() end)
-        end
-
+    -- hunt down and destroy ALL lock-on GUIs everywhere
+    local function destroyLockOnGuis(parent)
         pcall(function()
-            for _, gui in ipairs(game:GetService("CoreGui"):GetChildren()) do
-                if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then
-                    gui:Destroy()
+            for _, child in ipairs(parent:GetChildren()) do
+                if child:IsA("ScreenGui") and child.Name:find("LockOn") then
+                    child:Destroy()
                 end
             end
         end)
+    end
 
-        pcall(function()
-            local pg = game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui")
-            if pg then
-                for _, gui in ipairs(pg:GetChildren()) do
-                    if gui:IsA("ScreenGui") and gui.Name:find("LockOn") then
-                        gui:Destroy()
+    pcall(function() destroyLockOnGuis(game:GetService("CoreGui")) end)
+
+    local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
+    if pg then destroyLockOnGuis(pg) end
+
+    pcall(function()
+        if gethui then destroyLockOnGuis(gethui()) end
+    end)
+
+    -- destroy any highlights on characters (lock-on target highlights)
+    pcall(function()
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p.Character then
+                for _, child in ipairs(p.Character:GetChildren()) do
+                    if child:IsA("Highlight") then
+                        child:Destroy()
                     end
                 end
             end
-        end)
-
-        -- clear from genv
-        genv[SCRIPT_KEY] = nil
+        end
     end)
+
+    -- restore camera
+    pcall(function()
+        workspace.CurrentCamera.CameraType = Enum.CameraType.Custom
+    end)
+
+    -- clear script data from genv
+    genv[SCRIPT_KEY] = nil
 end
 
-register()
+-- wait for both SixZeroHub and the lock-on script to be ready
+local function tryRegister()
+    if not _G.SixZeroHubRegister then return false end
+
+    local data = getScriptData()
+    if not data then return false end
+
+    _G.SixZeroHubRegister("Lock-On Shiftlock", fileKey, fullDeactivate)
+    return true
+end
+
+-- retry until both systems are ready
+task.spawn(function()
+    for _ = 1, 30 do
+        if tryRegister() then return end
+        task.wait(1)
+    end
+end)
