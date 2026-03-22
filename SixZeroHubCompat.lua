@@ -13,41 +13,62 @@ end
 ---------- GUI OFFSET ----------
 
 local OFFSET = 70
-local isOffset = false
+local movedChildren = {} -- [child] = true, tracks what we've shifted
 
-local function shiftLockOnGui(direction)
+local function getLockOnGui()
+    local data = getScriptData()
+    if data and data.Gui then return data.Gui end
+    -- fallback: search everywhere
+    local function search(parent)
+        local ok, result = pcall(function()
+            for _, child in ipairs(parent:GetChildren()) do
+                if child:IsA("ScreenGui") and child.Name:find("LockOn") then
+                    return child
+                end
+            end
+        end)
+        return ok and result or nil
+    end
+    local gui = search(Players.LocalPlayer:FindFirstChild("PlayerGui") or game)
+    if not gui then pcall(function() gui = search(game:GetService("CoreGui")) end) end
+    if not gui then pcall(function() if gethui then gui = search(gethui()) end end) end
+    return gui
+end
+
+local function applyOffset()
+    local gui = getLockOnGui()
+    if not gui then return end
     pcall(function()
-        local data = getScriptData()
-        if not data or not data.Gui or not data.Gui.Parent then return end
-
-        local dx = direction * OFFSET
-        for _, child in ipairs(data.Gui:GetChildren()) do
+        for _, child in ipairs(gui:GetChildren()) do
             pcall(function()
-                if child:IsA("GuiObject") then
+                if child:IsA("GuiObject") and not movedChildren[child] then
                     child.Position = UDim2.new(
                         child.Position.X.Scale,
-                        child.Position.X.Offset + dx,
+                        child.Position.X.Offset + OFFSET,
                         child.Position.Y.Scale,
                         child.Position.Y.Offset
                     )
+                    movedChildren[child] = true
                 end
             end)
         end
     end)
 end
 
-local function applyOffset()
-    if not isOffset then
-        shiftLockOnGui(1)
-        isOffset = true
-    end
-end
-
 local function removeOffset()
-    if isOffset then
-        shiftLockOnGui(-1)
-        isOffset = false
+    for child, _ in pairs(movedChildren) do
+        pcall(function()
+            if child and child.Parent then
+                child.Position = UDim2.new(
+                    child.Position.X.Scale,
+                    child.Position.X.Offset - OFFSET,
+                    child.Position.Y.Scale,
+                    child.Position.Y.Offset
+                )
+            end
+        end)
     end
+    movedChildren = {}
 end
 
 ---------- DEACTIVATION ----------
@@ -60,9 +81,7 @@ local function fullDeactivate()
 
     removeOffset()
 
-    if data and data.Cleanup then
-        pcall(data.Cleanup)
-    end
+    if data and data.Cleanup then pcall(data.Cleanup) end
 
     if data and data.Connections then
         for _, conn in ipairs(data.Connections) do
@@ -75,9 +94,7 @@ local function fullDeactivate()
     end
     pcall(function() RunService:UnbindFromRenderStep("LockOnForceCamera") end)
 
-    if data and data.Gui then
-        pcall(function() data.Gui:Destroy() end)
-    end
+    if data and data.Gui then pcall(function() data.Gui:Destroy() end) end
 
     local function destroyLockOnGuis(parent)
         pcall(function()
@@ -88,10 +105,8 @@ local function fullDeactivate()
             end
         end)
     end
-
     pcall(function() destroyLockOnGuis(game:GetService("CoreGui")) end)
-    local pg = Players.LocalPlayer:FindFirstChild("PlayerGui")
-    if pg then destroyLockOnGuis(pg) end
+    pcall(function() destroyLockOnGuis(Players.LocalPlayer:FindFirstChild("PlayerGui")) end)
     pcall(function() if gethui then destroyLockOnGuis(gethui()) end end)
 
     pcall(function()
@@ -108,10 +123,10 @@ local function fullDeactivate()
     genv[SCRIPT_KEY] = nil
 end
 
----------- REGISTRATION + POLLING ----------
+---------- MAIN LOOP ----------
 
 task.spawn(function()
-    -- wait for both systems
+    -- register with hub
     for _ = 1, 30 do
         local data = getScriptData()
         if _G.SixZeroHubRegister and data then
@@ -121,30 +136,22 @@ task.spawn(function()
         task.wait(1)
     end
 
-    -- wait for GUI to exist
-    for _ = 1, 30 do
-        local data = getScriptData()
-        if data and data.Gui and data.Gui.Parent and #data.Gui:GetChildren() > 0 then
-            if _G.SixZeroHubVisible then
-                applyOffset()
-            end
-            break
-        end
-        task.wait(1)
-    end
-
-    -- poll _G.SixZeroHubVisible every 0.2s to react to toggle
-    local lastState = _G.SixZeroHubVisible
+    -- poll visibility and keep offset in sync
+    local wasVisible = nil
     while alive do
-        task.wait(0.2)
-        local currentState = _G.SixZeroHubVisible
-        if currentState ~= lastState then
-            if currentState then
+        task.wait(0.3)
+
+        local hubVisible = _G.SixZeroHubVisible
+        if hubVisible ~= wasVisible then
+            if hubVisible then
                 applyOffset()
             else
                 removeOffset()
             end
-            lastState = currentState
+            wasVisible = hubVisible
+        elseif hubVisible then
+            -- re-apply to catch newly created children (theme changes etc)
+            applyOffset()
         end
     end
 end)
