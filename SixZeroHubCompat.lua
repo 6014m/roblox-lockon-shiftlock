@@ -102,6 +102,20 @@ local function fullDeactivate()
     genv[SCRIPT_KEY] = nil
 end
 
+---------- TOGGLE LISTENER ----------
+
+-- when SixZeroHub is hidden, restore lock-on GUI; when shown, offset it again
+_G.SixZeroHubOnToggle = function(visible)
+    local data = getScriptData()
+    if not data or not data.Gui or not data.Gui.Parent then return end
+
+    if visible then
+        moveChildren(data.Gui)
+    else
+        restoreChildren()
+    end
+end
+
 ---------- REGISTRATION ----------
 
 task.spawn(function()
