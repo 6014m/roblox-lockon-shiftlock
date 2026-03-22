@@ -1012,14 +1012,11 @@ local function fullCleanup()
     
     -- Cleanup force camera hooks
     pcall(function() RunService:UnbindFromRenderStep("LockOnForceCamera") end)
-    if forceUpdateConnection then
-        pcall(function() forceUpdateConnection:Disconnect() end)
-        forceUpdateConnection = nil
-    end
     
     lockedOn, currentTarget = false, nil
     pcall(function() if camera then camera.CameraType = prevCameraType end end)
     pcall(function() RunService:UnbindFromRenderStep(BIND_NAME) end)
+    pcall(function() RunService:UnbindFromRenderStep(LOCKON_PLUS_BIND) end)
     pcall(function() disableCustomShiftlock() end)
     pcall(function() if shiftLock then shiftLock:Destroy() end end)
     pcall(function() if visuals then visuals:Destroy() end end)
@@ -1247,7 +1244,6 @@ end
 local lastTargetPos = nil
 local lastCameraCheck = 0
 local forceCameraRef = nil -- Our own camera reference for force mode
-local forceUpdateConnection = nil -- Secondary high-priority update
 local lastPlayerLookDir = nil -- Track where player is trying to look for mouse resistance
 
 -- Aggressive camera override for games with custom camera scripts
@@ -1317,33 +1313,12 @@ end
 
 -- Setup/teardown force camera hooks
 local function setupForceCameraHooks()
-    -- Disconnect old hook if exists
-    if forceUpdateConnection then
-        pcall(function() forceUpdateConnection:Disconnect() end)
-        forceUpdateConnection = nil
-    end
-    
+    pcall(function()
+        RunService:UnbindFromRenderStep("LockOnForceCamera")
+    end)
+
     if forceCameraMode then
-        -- Bind at HIGHEST priority (after everything else) to override game camera
-        -- Using Camera.Value + 100 ensures we run AFTER most game scripts
-        pcall(function()
-            RunService:UnbindFromRenderStep("LockOnForceCamera")
-        end)
-        
         RunService:BindToRenderStep("LockOnForceCamera", Enum.RenderPriority.Camera.Value + 100, forceCameraUpdate)
-        
-        -- Also connect to RenderStepped as backup (runs every frame)
-        forceUpdateConnection = RunService.RenderStepped:Connect(function()
-            if forceCameraMode and lockedOn then
-                task.defer(forceCameraUpdate) -- Defer to run after other RenderStepped connections
-            end
-        end)
-        
-        table.insert(allConnections, forceUpdateConnection)
-    else
-        pcall(function()
-            RunService:UnbindFromRenderStep("LockOnForceCamera")
-        end)
     end
 end
 
@@ -1609,59 +1584,13 @@ local function updateLockOnPlusAlignOrientation()
     end
 end
 
--- MAXIMUM ACCURACY: Multiple binds at different priorities to override everything
-local LOCKON_PLUS_BIND = "LockOnPlusCharRotation"
-local LOCKON_PLUS_BIND2 = "LockOnPlusCharRotation2"
-local LOCKON_PLUS_BIND3 = "LockOnPlusCharRotation3"
-
--- Bind BEFORE camera scripts
-RunService:BindToRenderStep(LOCKON_PLUS_BIND, Enum.RenderPriority.Camera.Value - 1, function()
-    updateLockOnPlusRotation()
-    updateLockOnPlusAlignOrientation()
-end)
-
--- Bind AFTER shiftlock (+100) but before Last
-RunService:BindToRenderStep(LOCKON_PLUS_BIND2, Enum.RenderPriority.Camera.Value + 200, function()
-    updateLockOnPlusRotation()
-    updateLockOnPlusAlignOrientation()
-end)
-
--- Bind at absolute LAST priority
-RunService:BindToRenderStep(LOCKON_PLUS_BIND3, Enum.RenderPriority.Last.Value, function()
-    updateLockOnPlusRotation()
-    updateLockOnPlusAlignOrientation()
-end)
-
--- Also run via RenderStepped with defer to run after ALL render steps
-local lockOnPlusConn = nil
-lockOnPlusConn = RunService.RenderStepped:Connect(function()
-    if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
-        task.defer(function()
-            updateLockOnPlusRotation()
-            updateLockOnPlusAlignOrientation()
-        end)
-    end
-end)
-table.insert(allConnections, lockOnPlusConn)
-
--- Also hook Heartbeat for physics-level accuracy
-local lockOnPlusHeartbeat = nil
-lockOnPlusHeartbeat = RunService.Heartbeat:Connect(function()
+-- Single render step for LockOn+ at high priority (after camera + force camera)
+RunService:BindToRenderStep(LOCKON_PLUS_BIND, Enum.RenderPriority.Camera.Value + 150, function()
     if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
         updateLockOnPlusRotation()
         updateLockOnPlusAlignOrientation()
     end
 end)
-table.insert(allConnections, lockOnPlusHeartbeat)
-
--- Stepped runs before physics - good for constraint setup
-local lockOnPlusStepped = nil
-lockOnPlusStepped = RunService.Stepped:Connect(function()
-    if lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget then
-        updateLockOnPlusAlignOrientation()
-    end
-end)
-table.insert(allConnections, lockOnPlusStepped)
 
 --==================================================
 -- BUILD GUI
