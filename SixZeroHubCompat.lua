@@ -13,31 +13,38 @@ end
 
 ---------- GUI OFFSET ----------
 
-local originalGuiPos = nil
-local movedGui = nil
+local OFFSET_X = 70
+local originalPositions = {}
+local movedGuiRef = nil
 
-local function findAndMoveLockOnGui()
-    local data = getScriptData()
-    if not data then return end
-
-    local gui = data.Gui
+local function moveChildren(gui)
     if not gui or not gui.Parent then return end
-    if movedGui == gui then return end -- already moved this one
+    if movedGuiRef == gui then return end
 
-    -- store original position
-    originalGuiPos = gui.Position
-
-    -- offset the entire ScreenGui so nothing overlaps the sixzerohub corner/buttons
-    gui.Position = UDim2.new(0, 70, 0, 0)
-    movedGui = gui
+    for _, child in ipairs(gui:GetChildren()) do
+        if child:IsA("GuiObject") then
+            originalPositions[child] = child.Position
+            child.Position = UDim2.new(
+                child.Position.X.Scale,
+                child.Position.X.Offset + OFFSET_X,
+                child.Position.Y.Scale,
+                child.Position.Y.Offset
+            )
+        end
+    end
+    movedGuiRef = gui
 end
 
-local function restoreLockOnGui()
-    if movedGui and movedGui.Parent and originalGuiPos then
-        pcall(function() movedGui.Position = originalGuiPos end)
+local function restoreChildren()
+    for child, pos in pairs(originalPositions) do
+        pcall(function()
+            if child and child.Parent then
+                child.Position = pos
+            end
+        end)
     end
-    movedGui = nil
-    originalGuiPos = nil
+    originalPositions = {}
+    movedGuiRef = nil
 end
 
 ---------- DEACTIVATION ----------
@@ -45,7 +52,7 @@ end
 local function fullDeactivate()
     local data, genv = getScriptData()
 
-    restoreLockOnGui()
+    restoreChildren()
 
     if data and data.Cleanup then
         pcall(data.Cleanup)
@@ -92,14 +99,12 @@ local function fullDeactivate()
     end)
 
     pcall(function() workspace.CurrentCamera.CameraType = Enum.CameraType.Custom end)
-
     genv[SCRIPT_KEY] = nil
 end
 
 ---------- REGISTRATION ----------
 
 task.spawn(function()
-    -- wait for both systems
     for _ = 1, 30 do
         local data = getScriptData()
         if _G.SixZeroHubRegister and data then
@@ -109,23 +114,24 @@ task.spawn(function()
         task.wait(1)
     end
 
-    -- wait for lock-on GUI to exist then move it
-    for _ = 1, 20 do
+    -- wait for lock-on GUI to be fully built then move its children
+    for _ = 1, 30 do
         local data = getScriptData()
-        if data and data.Gui and data.Gui.Parent then
-            findAndMoveLockOnGui()
+        if data and data.Gui and data.Gui.Parent and #data.Gui:GetChildren() > 0 then
+            moveChildren(data.Gui)
             break
         end
         task.wait(1)
     end
 
-    -- keep checking in case GUI gets recreated (theme changes etc)
+    -- watch for GUI recreation (theme changes rebuild it)
     while true do
         task.wait(3)
         local data = getScriptData()
         if not data then break end
-        if data.Gui and data.Gui.Parent and data.Gui ~= movedGui then
-            findAndMoveLockOnGui()
+        if data.Gui and data.Gui.Parent and data.Gui ~= movedGuiRef and #data.Gui:GetChildren() > 0 then
+            originalPositions = {}
+            moveChildren(data.Gui)
         end
     end
 end)
