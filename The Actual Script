@@ -287,6 +287,8 @@ local ShiftLockModule = loadModule("https://raw.githubusercontent.com/6014m/robl
 local TargetingModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnTargetingModule.lua")
 local VisualModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnVisualModule.lua")
 local ExtraSettingsModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnExtraSettingsModule.lua")
+local ThemeModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnThemeModule.lua")
+local LockOnPlusModule = loadModule("https://raw.githubusercontent.com/6014m/roblox-lockon-shiftlock/main/LockOnPlusModule.lua")
 
 local shiftLock = ShiftLockModule and ShiftLockModule.new(localPlayer)
 local friendlies = {}
@@ -302,7 +304,8 @@ local lockCamToggleKeybind = Enum.KeyCode.F
 -- ANIMATED THEMES
 --==================================================
 
-local THEMES = {
+-- Themes loaded from module, single-theme fallback if module unavailable
+local THEMES = (ThemeModule and ThemeModule.THEMES) or {
     Ember = {
         primary1 = Color3.fromRGB(255, 60, 30),
         primary2 = Color3.fromRGB(200, 40, 80),
@@ -312,84 +315,17 @@ local THEMES = {
         glow = Color3.fromRGB(255, 100, 50),
         animSpeed = 2,
     },
-    Ocean = {
-        primary1 = Color3.fromRGB(30, 144, 255),
-        primary2 = Color3.fromRGB(0, 200, 200),
-        secondary = Color3.fromRGB(20, 35, 50),
-        background = Color3.fromRGB(12, 22, 35),
-        text = Color3.fromRGB(220, 240, 255),
-        glow = Color3.fromRGB(50, 180, 255),
-        animSpeed = 3,
-    },
-    Void = {
-        primary1 = Color3.fromRGB(150, 50, 255),
-        primary2 = Color3.fromRGB(255, 50, 150),
-        secondary = Color3.fromRGB(25, 20, 40),
-        background = Color3.fromRGB(15, 12, 25),
-        text = Color3.fromRGB(240, 230, 255),
-        glow = Color3.fromRGB(180, 100, 255),
-        animSpeed = 2.5,
-    },
-    Neon = {
-        primary1 = Color3.fromRGB(0, 255, 150),
-        primary2 = Color3.fromRGB(0, 200, 255),
-        secondary = Color3.fromRGB(15, 25, 25),
-        background = Color3.fromRGB(8, 15, 15),
-        text = Color3.fromRGB(220, 255, 250),
-        glow = Color3.fromRGB(0, 255, 200),
-        animSpeed = 1.5,
-    },
-    Sunset = {
-        primary1 = Color3.fromRGB(255, 100, 50),
-        primary2 = Color3.fromRGB(255, 50, 150),
-        secondary = Color3.fromRGB(45, 30, 40),
-        background = Color3.fromRGB(30, 20, 28),
-        text = Color3.fromRGB(255, 245, 240),
-        glow = Color3.fromRGB(255, 130, 80),
-        animSpeed = 3,
-    },
-    Frost = {
-        primary1 = Color3.fromRGB(180, 220, 255),
-        primary2 = Color3.fromRGB(150, 200, 255),
-        secondary = Color3.fromRGB(40, 50, 65),
-        background = Color3.fromRGB(25, 35, 50),
-        text = Color3.fromRGB(240, 250, 255),
-        glow = Color3.fromRGB(150, 200, 255),
-        animSpeed = 4,
-    },
-    Toxic = {
-        primary1 = Color3.fromRGB(150, 255, 0),
-        primary2 = Color3.fromRGB(0, 255, 100),
-        secondary = Color3.fromRGB(25, 35, 20),
-        background = Color3.fromRGB(15, 22, 12),
-        text = Color3.fromRGB(230, 255, 220),
-        glow = Color3.fromRGB(120, 255, 50),
-        animSpeed = 2,
-    },
-    Blood = {
-        primary1 = Color3.fromRGB(180, 0, 0),
-        primary2 = Color3.fromRGB(120, 0, 50),
-        secondary = Color3.fromRGB(35, 15, 20),
-        background = Color3.fromRGB(20, 10, 12),
-        text = Color3.fromRGB(255, 220, 220),
-        glow = Color3.fromRGB(200, 50, 50),
-        animSpeed = 2.5,
-    },
 }
+
+local lerpColor = (ThemeModule and ThemeModule.lerpColor) or function(c1, c2, t)
+    return Color3.new(c1.R + (c2.R - c1.R) * t, c1.G + (c2.G - c1.G) * t, c1.B + (c2.B - c1.B) * t)
+end
 
 local currentThemeName = "Ember"
 local currentTheme = THEMES.Ember
 local themeAnimationActive = true
 local animatedElements = {}
 local themeAnimTime = 0
-
-local function lerpColor(c1, c2, t)
-    return Color3.new(
-        c1.R + (c2.R - c1.R) * t,
-        c1.G + (c2.G - c1.G) * t,
-        c1.B + (c2.B - c1.B) * t
-    )
-end
 
 -- Safe animation loop
 connect(RunService.Heartbeat, function(dt)
@@ -542,6 +478,11 @@ local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 
 -- Game functions are in ExtraSettingsModule
 local teamsModeEnabled = false
+
+-- LockOn+ module (character rotation toward target)
+local lockOnPlus = LockOnPlusModule and LockOnPlusModule.new(localPlayer, getRootPart, function()
+    return lockOnPlusEnabled, lockOnPlusHeld, lockedOn, currentTarget, currentTargetType
+end)
 
 --==================================================
 -- UI REFERENCES
@@ -755,46 +696,12 @@ local function isValidTarget(char)
 end
 
 --==================================================
--- NPC SYSTEM
+-- NPC SYSTEM (uses TargetingModule)
 --==================================================
 
-local function isNPC(model)
-    if not model:IsA("Model") then return false end
-    local hum, root = getHumanoid(model), getRootPart(model)
-    if not hum or not root then return false end
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr.Character == model then return false end
-    end
-    return model ~= localPlayer.Character
-end
-
-local function searchForNPCs(container, npcs, myRoot, depth)
-    if depth > 4 then return end
-    for _, child in ipairs(container:GetChildren()) do
-        if child:IsA("Model") and isNPC(child) and isValidTarget(child) then
-            local root = getRootPart(child)
-            if root then
-                local dist = (root.Position - myRoot.Position).Magnitude
-                if rangeLimit == 0 or dist <= rangeLimit then
-                    table.insert(npcs, {model = child, distance = dist})
-                end
-            end
-        end
-        if child:IsA("Folder") or child:IsA("Model") then
-            local name = child.Name:lower()
-            if not (name == "camera" or name == "terrain" or name == "lighting" or name == "chat" or name == "sounds") then
-                searchForNPCs(child, npcs, myRoot, depth + 1)
-            end
-        end
-    end
-end
-
 local function findNPCsNow()
-    local npcs, myRoot = {}, getRootPart(localPlayer.Character)
-    if not myRoot then return npcs end
-    searchForNPCs(workspace, npcs, myRoot, 0)
-    table.sort(npcs, function(a, b) return a.distance < b.distance end)
-    return npcs
+    if not targeting then return {} end
+    return targeting:FindNPCs(isValidTarget, 4)
 end
 
 local function updateNPCHighlight()
@@ -1021,6 +928,7 @@ local function fullCleanup()
     pcall(function() if shiftLock then shiftLock:Destroy() end end)
     pcall(function() if visuals then visuals:Destroy() end end)
     pcall(function() if npcHighlight then npcHighlight:Destroy() end end)
+    pcall(function() if lockOnPlus then lockOnPlus:Destroy() end end)
     if ExtraSettingsModule then pcall(function() ExtraSettingsModule.stopTeamsMode() end) end
     for id in pairs(friendlies) do friendlies[id] = nil end
     pcall(function() if gui then gui:Destroy() end end)
@@ -1476,119 +1384,7 @@ end
 
 RunService:BindToRenderStep(BIND_NAME, Enum.RenderPriority.Camera.Value + 1, updateCamera)
 
---==================================================
--- LOCKON+ CHARACTER ROTATION (runs after everything to override shiftlock)
---==================================================
-
-local LOCKON_PLUS_BIND = "LockOnPlusCharRotation"
-
-local function updateLockOnPlusRotation()
-    -- Only run if enabled, held, and locked onto someone
-    if not lockOnPlusEnabled or not lockOnPlusHeld or not lockedOn or not currentTarget then
-        return
-    end
-    
-    local myChar = localPlayer.Character
-    if not myChar then return end
-    
-    local myRoot = getRootPart(myChar)
-    local myHum = myChar:FindFirstChildOfClass("Humanoid")
-    if not myRoot or not myHum then return end
-    
-    -- Get target position
-    local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
-    local targetRoot = getRootPart(targetChar)
-    if not targetRoot then return end
-    
-    -- Calculate direction from player to target (Y axis only)
-    local targetPos = targetRoot.Position
-    local myPos = myRoot.Position
-    local direction = (targetPos - myPos)
-    local flatDirection = Vector3.new(direction.X, 0, direction.Z)
-    
-    if flatDirection.Magnitude < 0.1 then return end
-    
-    -- Disable AutoRotate to take manual control
-    myHum.AutoRotate = false
-    
-    -- Calculate the Y rotation angle
-    local targetCFrame = CFrame.lookAt(myPos, myPos + flatDirection)
-    local _, yAngle, _ = targetCFrame:ToEulerAnglesYXZ()
-    
-    -- Apply rotation (only Y axis, preserve position)
-    myRoot.CFrame = CFrame.new(myRoot.Position) * CFrame.Angles(0, yAngle, 0)
-end
-
--- AlignOrientation for physics-based rotation (handles fast dashes better)
-local lockOnPlusAlign = nil
-local lockOnPlusAttachment = nil
-
-local function setupLockOnPlusConstraint()
-    local myChar = localPlayer.Character
-    if not myChar then return end
-    local myRoot = getRootPart(myChar)
-    if not myRoot then return end
-    
-    -- Create attachment if needed
-    if not lockOnPlusAttachment or not lockOnPlusAttachment.Parent then
-        lockOnPlusAttachment = Instance.new("Attachment")
-        lockOnPlusAttachment.Name = "LockOnPlusAttachment"
-        lockOnPlusAttachment.Parent = myRoot
-    end
-    
-    -- Create AlignOrientation if needed
-    if not lockOnPlusAlign or not lockOnPlusAlign.Parent then
-        lockOnPlusAlign = Instance.new("AlignOrientation")
-        lockOnPlusAlign.Name = "LockOnPlusAlign"
-        lockOnPlusAlign.Mode = Enum.OrientationAlignmentMode.OneAttachment
-        lockOnPlusAlign.Attachment0 = lockOnPlusAttachment
-        lockOnPlusAlign.RigidityEnabled = true -- Instant snap
-        lockOnPlusAlign.Responsiveness = 200 -- Very high responsiveness
-        lockOnPlusAlign.MaxTorque = math.huge
-        lockOnPlusAlign.Parent = myRoot
-    end
-end
-
-local function updateLockOnPlusAlignOrientation()
-    if not lockOnPlusEnabled or not lockOnPlusHeld or not lockedOn or not currentTarget then
-        -- Disable constraint when not in use
-        if lockOnPlusAlign then lockOnPlusAlign.Enabled = false end
-        return
-    end
-    
-    local myChar = localPlayer.Character
-    if not myChar then return end
-    local myRoot = getRootPart(myChar)
-    local myHum = myChar:FindFirstChildOfClass("Humanoid")
-    if not myRoot or not myHum then return end
-    
-    local targetChar = (currentTargetType == "player") and (currentTarget and currentTarget.Character) or currentTarget
-    local targetRoot = getRootPart(targetChar)
-    if not targetRoot then return end
-    
-    local targetPos = targetRoot.Position
-    local myPos = myRoot.Position
-    local direction = (targetPos - myPos)
-    local flatDirection = Vector3.new(direction.X, 0, direction.Z)
-    
-    if flatDirection.Magnitude < 0.1 then return end
-    
-    myHum.AutoRotate = false
-    
-    -- Setup constraint if needed
-    setupLockOnPlusConstraint()
-    
-    if lockOnPlusAlign then
-        lockOnPlusAlign.Enabled = true
-        lockOnPlusAlign.CFrame = CFrame.lookAt(Vector3.zero, flatDirection)
-    end
-end
-
--- Single render step for LockOn+ at high priority (after camera + force camera)
-RunService:BindToRenderStep(LOCKON_PLUS_BIND, Enum.RenderPriority.Camera.Value + 150, function()
-    updateLockOnPlusRotation()
-    updateLockOnPlusAlignOrientation()
-end)
+-- LockOn+ handled by LockOnPlusModule (bindings, rotation, AlignOrientation)
 
 --==================================================
 -- BUILD GUI

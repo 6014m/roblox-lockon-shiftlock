@@ -202,4 +202,49 @@ function Targeting:GetBestTarget(excludePlayer)
     end
 end
 
+-- NPC targeting
+
+function Targeting:IsNPC(model)
+    if not model:IsA("Model") then return false end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    local root = getRootPart(model)
+    if not hum or not root then return false end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Character == model then return false end
+    end
+    return model ~= self.localPlayer.Character
+end
+
+local SKIP_NAMES = { camera = true, terrain = true, lighting = true, chat = true, sounds = true }
+
+function Targeting:FindNPCs(isValidFn, maxDepth)
+    local myRoot = getRootPart(self.localPlayer.Character)
+    if not myRoot then return {} end
+
+    local npcs = {}
+    local limit = self.rangeLimit
+
+    local function search(container, depth)
+        if depth > (maxDepth or 4) then return end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("Model") and self:IsNPC(child) and (not isValidFn or isValidFn(child)) then
+                local root = getRootPart(child)
+                if root then
+                    local dist = (root.Position - myRoot.Position).Magnitude
+                    if limit <= 0 or dist <= limit then
+                        table.insert(npcs, { model = child, distance = dist })
+                    end
+                end
+            end
+            if (child:IsA("Folder") or child:IsA("Model")) and not SKIP_NAMES[child.Name:lower()] then
+                search(child, depth + 1)
+            end
+        end
+    end
+
+    search(Workspace, 0)
+    table.sort(npcs, function(a, b) return a.distance < b.distance end)
+    return npcs
+end
+
 return Targeting
