@@ -479,10 +479,7 @@ local lockOnPlusHeld = false -- Whether the LockOn+ keybind is currently held
 -- Game functions are in ExtraSettingsModule
 local teamsModeEnabled = false
 
--- LockOn+ module (character rotation toward target)
-local lockOnPlus = LockOnPlusModule and LockOnPlusModule.new(localPlayer, getRootPart, function()
-    return lockOnPlusEnabled, lockOnPlusHeld, lockedOn, currentTarget, currentTargetType
-end)
+local lockOnPlus -- initialized after getRootPart is defined
 
 --==================================================
 -- UI REFERENCES
@@ -642,6 +639,11 @@ end
 
 local function getHumanoid(char) return char and char:FindFirstChildOfClass("Humanoid") end
 local function isFriendly(plr) return friendlies[plr.UserId] == true end
+
+-- LockOn+ module (must be after getRootPart is defined)
+lockOnPlus = LockOnPlusModule and LockOnPlusModule.new(localPlayer, getRootPart, function()
+    return lockOnPlusEnabled, lockOnPlusHeld, lockedOn, currentTarget, currentTargetType
+end)
 
 --==================================================
 -- CUSTOM SHIFTLOCK SYSTEM (Uses ShiftLockModule)
@@ -2105,13 +2107,15 @@ connect(UserInputService.InputEnded, function(input)
     if input.UserInputType == Enum.UserInputType.Keyboard then
         if input.KeyCode == keybinds.ReverseLock then reverseLockHeld = false end
         if input.KeyCode == lockCamToggleKeybind and lockCamToggleEnabled and lockCamToggleMode == "Hold" then lockCamToggleActive = false end
-        if input.KeyCode == keybinds.LockOnPlus then 
+        if input.KeyCode == keybinds.LockOnPlus then
             lockOnPlusHeld = false
-            -- Re-enable AutoRotate when released
-            local myChar = localPlayer.Character
-            if myChar then
-                local myHum = myChar:FindFirstChildOfClass("Humanoid")
-                if myHum then myHum.AutoRotate = true end
+            -- Re-enable AutoRotate when released (only if shiftlock is off)
+            if not customShiftlockEnabled then
+                local myChar = localPlayer.Character
+                if myChar then
+                    local myHum = myChar:FindFirstChildOfClass("Humanoid")
+                    if myHum then myHum.AutoRotate = true end
+                end
             end
         end
     end
