@@ -1,5 +1,4 @@
--- ShiftLockModule - Based on original working version
--- Added: Methods to disable game's built-in shiftlock
+-- ShiftLockModule - Custom shiftlock with proper death/respawn handling
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -24,21 +23,18 @@ function ShiftLock.new(localPlayer)
     self.charConn = nil
     self.humConn = nil
     self.loopConn = nil
+    self.focusConn = nil
 
     local char = localPlayer.Character or localPlayer.CharacterAdded:Wait()
     self:_updateCharacterRefs(char)
     self.charConn = localPlayer.CharacterAdded:Connect(function(c)
         self:_updateCharacterRefs(c)
-        -- Re-apply if was locked
-        if self.shiftLocked then
-            task.delay(0.5, function()
-                self:_applyLock()
-            end)
-        end
+        self:ForceOff()
     end)
 
     self:_buildGui()
     self:_bindLoop()
+    self:_bindWindowFocus()
 
     return self
 end
@@ -83,47 +79,15 @@ function ShiftLock:_updateCharacterRefs(char)
     end
 
     self.humConn = self.humanoid.Died:Connect(function()
-        if self.vIcon then
-            self.vIcon.Visible = false
-        end
+        self.shiftLocked = false
+        self:ForceOff()
     end)
 end
 
--- Disable the game's built-in shiftlock systems
+-- Disable the game's built-in shiftlock so it doesn't conflict
 function ShiftLock:_disableGameShiftLock()
-    -- Method 1: DevEnableMouseLock
     pcall(function()
         self.player.DevEnableMouseLock = false
-    end)
-    
-    -- Method 2: Try to access and disable PlayerModule's MouseLockController
-    pcall(function()
-        local playerScripts = self.player:FindFirstChild("PlayerScripts")
-        if playerScripts then
-            local playerModule = playerScripts:FindFirstChild("PlayerModule")
-            if playerModule then
-                local success, cameraModule = pcall(function()
-                    return require(playerModule:WaitForChild("CameraModule", 1))
-                end)
-                
-                if success and cameraModule and cameraModule.activeMouseLockController then
-                    pcall(function()
-                        cameraModule.activeMouseLockController:SetIsMouseLocked(false)
-                    end)
-                    pcall(function()
-                        cameraModule.activeMouseLockController:EnableMouseLock(false)
-                    end)
-                end
-            end
-        end
-    end)
-    
-    -- Method 3: GameSettings
-    pcall(function()
-        local gameSettings = UserSettings():GetService("UserGameSettings")
-        if gameSettings then
-            gameSettings.ControlMode = Enum.ControlMode.Classic
-        end
     end)
 end
 
@@ -139,7 +103,6 @@ function ShiftLock:_bindLoop()
             return
         end
 
-        -- Keep camera centered when enabled
         local char = self.player.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         if hum then
@@ -150,15 +113,7 @@ function ShiftLock:_bindLoop()
             return
         end
 
-        local cam = workspace.CurrentCamera
-        if not cam then return end
-
-        -- Force mouse lock
-        if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
-            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-        end
-
-        -- Skip during bad states
+        -- Check health/state BEFORE forcing mouse lock
         if self.humanoid.PlatformStand or self.humanoid.Health <= 0 then
             return
         end
@@ -171,11 +126,32 @@ function ShiftLock:_bindLoop()
             return
         end
 
-        -- Rotate character to face camera (Y axis only) - ORIGINAL METHOD
+        local cam = workspace.CurrentCamera
+        if not cam then return end
+
+        if UserInputService.MouseBehavior ~= Enum.MouseBehavior.LockCenter then
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        end
+
+        -- Rotate character to face camera (Y axis only)
         local look = cam.CFrame.LookVector
         local flatLook = Vector3.new(look.X, 0, look.Z)
         if flatLook.Magnitude > 0 then
             self.root.CFrame = CFrame.lookAt(self.root.Position, self.root.Position + flatLook)
+        end
+    end)
+end
+
+-- internal: unlock when window loses focus (alt-tab etc)
+function ShiftLock:_bindWindowFocus()
+    if self.focusConn then
+        self.focusConn:Disconnect()
+        self.focusConn = nil
+    end
+
+    self.focusConn = UserInputService.WindowFocusReleased:Connect(function()
+        if self.shiftLocked then
+            self:ForceOff()
         end
     end)
 end
@@ -277,6 +253,10 @@ function ShiftLock:Destroy()
     if self.humConn then
         self.humConn:Disconnect()
         self.humConn = nil
+    end
+    if self.focusConn then
+        self.focusConn:Disconnect()
+        self.focusConn = nil
     end
 
     if self.gui then

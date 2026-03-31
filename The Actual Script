@@ -279,7 +279,7 @@ end)
 --==================================================
 
 local function loadModule(url)
-    local s, r = pcall(function() return loadstring(game:HttpGet(url))() end)
+    local s, r = pcall(function() return loadstring(game:HttpGet(url, true))() end)
     return s and r or nil
 end
 

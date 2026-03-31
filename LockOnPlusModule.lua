@@ -119,39 +119,14 @@ function LockOnPlus:_runAll()
 end
 
 function LockOnPlus:_setup()
-    local BIND1 = "LockOnPlusCharRotation"
-    local BIND2 = "LockOnPlusCharRotation2"
-    local BIND3 = "LockOnPlusCharRotation3"
+    local BIND = "LockOnPlusCharRotation"
 
-    -- Bind BEFORE camera scripts
-    RunService:BindToRenderStep(BIND1, Enum.RenderPriority.Camera.Value - 1, function()
+    -- Single bind after shiftlock + camera to override rotation
+    RunService:BindToRenderStep(BIND, Enum.RenderPriority.Camera.Value + 150, function()
         self:_runAll()
     end)
-    -- Bind AFTER shiftlock (+200) but before Last
-    RunService:BindToRenderStep(BIND2, Enum.RenderPriority.Camera.Value + 200, function()
-        self:_runAll()
-    end)
-    -- Bind at absolute LAST priority
-    RunService:BindToRenderStep(BIND3, Enum.RenderPriority.Last.Value, function()
-        self:_runAll()
-    end)
-    self._binds = { BIND1, BIND2, BIND3 }
-
-    -- RenderStepped with defer to run after ALL render steps
-    local c1 = RunService.RenderStepped:Connect(function()
-        if self:_shouldRun() then
-            task.defer(function() self:_runAll() end)
-        end
-    end)
-    -- Heartbeat for physics-level accuracy
-    local c2 = RunService.Heartbeat:Connect(function()
-        if self:_shouldRun() then self:_runAll() end
-    end)
-    -- Stepped runs before physics - good for constraint setup
-    local c3 = RunService.Stepped:Connect(function()
-        if self:_shouldRun() then self:_updateAlignOrientation() end
-    end)
-    self._connections = { c1, c2, c3 }
+    self._binds = { BIND }
+    self._connections = {}
 end
 
 function LockOnPlus:Destroy()
