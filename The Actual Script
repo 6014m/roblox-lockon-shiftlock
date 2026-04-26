@@ -645,6 +645,16 @@ lockOnPlus = LockOnPlusModule and LockOnPlusModule.new(localPlayer, getRootPart,
     return lockOnPlusEnabled, lockOnPlusHeld, lockedOn, currentTarget, currentTargetType
 end)
 
+-- Wire ShiftLock to yield rotation to LockOn+ when active. Without this, ShiftLock's
+-- RenderStepped fires AFTER LockOnPlusModule's BindToRenderStep and overwrites the body
+-- rotation back to camera direction every frame. This callback makes ShiftLock skip its
+-- own rotation step when LockOn+ wants control — keeping mouse-lock + V icon active.
+if shiftLock then
+    shiftLock.externalSkipRotation = function()
+        return lockOnPlusEnabled and lockOnPlusHeld and lockedOn and currentTarget ~= nil
+    end
+end
+
 --==================================================
 -- CUSTOM SHIFTLOCK SYSTEM (Uses ShiftLockModule)
 --==================================================

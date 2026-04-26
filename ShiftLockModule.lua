@@ -133,6 +133,12 @@ function ShiftLock:_bindLoop()
             UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
         end
 
+        -- External rotation override: callers (e.g. LockOn+) can install a check here so
+        -- shiftlock keeps mouse-lock + UI but yields the body rotation to them.
+        if self.externalSkipRotation and self.externalSkipRotation() then
+            return
+        end
+
         -- Rotate character to face camera (Y axis only)
         local look = cam.CFrame.LookVector
         local flatLook = Vector3.new(look.X, 0, look.Z)
